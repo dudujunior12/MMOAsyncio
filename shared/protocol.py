@@ -3,7 +3,6 @@ import json
 # --- Tipos de Pacotes (Protocolo) ---
 # Usados para o cliente e o servidor saberem o que fazer com a mensagem.
 # A primeira mensagem do cliente DEVE ser um pacote de LOGIN.
-PACKET_LOGIN = "LOGIN"
 PACKET_AUTH_SUCCESS = "AUTH_SUCCESS"
 PACKET_AUTH_FAIL = "AUTH_FAIL"
 PACKET_CHAT_MESSAGE = "CHAT_MESSAGE"

@@ -5,7 +5,8 @@ from shared.protocol import (
     PACKET_AUTH_SUCCESS,
     PACKET_CHAT_MESSAGE,
     PACKET_REGISTER,
-    PACKET_REGISTER_SUCCESS
+    PACKET_REGISTER_SUCCESS,
+    PACKET_SYSTEM_MESSAGE
 )
 from shared.constants import IP, PORT, DATA_PAYLOAD_SIZE
 import asyncio
@@ -60,9 +61,11 @@ async def receive_loop(client):
             continue
         content = packet.get("content")
         if packet.get("type") == PACKET_CHAT_MESSAGE and content:
-            print(f"\n[Chat] {content}\n> ", end='', flush=True)
+            print(f"\n[CHAT] {content}\n> ", end='', flush=True)
+        elif packet.get("type") == PACKET_SYSTEM_MESSAGE and content:
+            print(f"\n[SYSTEM] {content}\n> ", end='', flush=True)
         else:
-            print(f"\n[System] {packet}\n> ", end='', flush=True)
+            print(f"\n[UNKNOWN] {content}\n> ", end='', flush=True)
 
 
 if __name__ == "__main__":
