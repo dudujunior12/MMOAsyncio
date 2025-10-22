@@ -96,6 +96,7 @@ class ServerSocket:
             try:
                 while True:
                     data = await reader.readline()
+                        
                     if not data:
                         break
                     
@@ -112,15 +113,23 @@ class ServerSocket:
                     else:
                         logger.warning(f"Unknown or malformed packet from {addr}: {packet}")
 
-            except ConnectionResetError:
-                logger.info(f"Connection reset by {addr}")
+            except (OSError, ConnectionResetError) as e:
+                pass
             except Exception as e:
                 logger.error(f"Error handling client {addr}: {e}")
             finally:
-                self.clients.pop(writer, None)
-                await self.broadcast_system_message(f"User {authenticated_user} has left.", exclude_writer=writer)
+                user_info = self.clients.pop(writer, None)
+                user = user_info['user'] if user_info else authenticated_user
+
+                if user:
+                    logger.info(f"User {user} disconnected from {addr}")
+                    await self.broadcast_system_message(f"User {user} has left.", exclude_writer=writer)
+
                 writer.close()
-                await writer.wait_closed()
+                try:
+                    await writer.wait_closed()
+                except (OSError, ConnectionResetError) as e:
+                    pass
                 logger.info(f"Connection closed from {addr}")
             
     async def broadcast_chat_message(self, message: str, exclude_writer=None):
