@@ -17,12 +17,13 @@ from server.db.login import authenticate_user, create_user
 logger = get_logger(__name__)
 
 class ServerSocket:
-    def __init__(self, host, port, data_payload_size, db_pool):
+    def __init__(self, host, port, data_payload_size, db_pool, game_engine):
         self.host = host
         self.port = port
         self.server_address = (host, port)
         self.data_payload_size = data_payload_size
         self.clients = {}
+        self.game_engine = game_engine
         self.db_pool = db_pool
         self.server = None
     
@@ -91,6 +92,8 @@ class ServerSocket:
             user_info = {'user': authenticated_user, 'addr': addr}
             self.clients[writer] = user_info
             logger.info(f"User {authenticated_user} connected from {addr}")
+            await self.game_engine.player_connected(writer, authenticated_user)
+            
             await self.broadcast_system_message(f"User {authenticated_user} has joined.", exclude_writer=writer)
         
             try:
@@ -103,13 +106,13 @@ class ServerSocket:
                     packet = decode_message(data.strip())
                     if isinstance(packet, dict):
                         pkt_type = packet.get('type')
+                    
+                        if pkt_type in [PACKET_AUTH, PACKET_REGISTER]:
+                            logger.warning(f"Received unexpected auth/register packet from authenticated user {authenticated_user} at {addr}")
+                            continue
+                    
+                        await self.game_engine.process_network_packet(writer, packet)
 
-                    if pkt_type == PACKET_CHAT_MESSAGE:
-                        message = packet.get('content', '')
-                        user = self.clients[writer]['user']
-                        logger.info(f"User {user} from {addr} sent chat message: {message}")
-                        response = f"[{user}]: {message}"
-                        await self.broadcast_chat_message(response, writer)
                     else:
                         logger.warning(f"Unknown or malformed packet from {addr}: {packet}")
 
@@ -123,6 +126,7 @@ class ServerSocket:
 
                 if user:
                     logger.info(f"User {user} disconnected from {addr}")
+                    await self.game_engine.player_disconnected(user)
                     await self.broadcast_system_message(f"User {user} has left.", exclude_writer=writer)
 
                 writer.close()
@@ -131,6 +135,10 @@ class ServerSocket:
                 except (OSError, ConnectionResetError) as e:
                     pass
                 logger.info(f"Connection closed from {addr}")
+                
+    def get_user_by_writer(self, writer: asyncio.StreamWriter):
+        user_info = self.clients.get(writer)
+        return user_info['user'] if user_info else None
             
     async def broadcast_chat_message(self, message: str, exclude_writer=None):
         chat_packet = {'type': PACKET_CHAT_MESSAGE, 'content': message}
@@ -153,6 +161,20 @@ class ServerSocket:
                     await writer.drain()
                 except Exception as e:
                     logger.error(f"Error broadcasting system message: {e}")
+                    
+    async def broadcast_game_update(self, packet: dict, exclude_writer=None):
+        try: 
+            encoded_message = encode_message(packet)
+            
+            for writer in self.clients.keys():
+                if writer != exclude_writer:
+                    try:
+                        writer.write(encoded_message)
+                        await writer.drain()
+                    except Exception:
+                        logger.error(f"Error sending broadcast: {e}")
+        except Exception as e:
+            logger.error(f"Error during game update broadcast: {e}")
     
     async def shutdown(self):
         logger.info("Server shutting down.")

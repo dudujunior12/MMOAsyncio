@@ -1,11 +1,9 @@
 import asyncio
-from typing import Literal, Tuple, Any
+from typing import Dict, Literal, Tuple, Any
+
+from shared.protocol import PACKET_CHAT_MESSAGE, PACKET_MOVE
 
 async def get_auth_choice() -> Literal['L', 'R'] | None:
-    """
-    Displays the Login/Register menu and waits for the user's choice.
-    Returns 'L' for Login, 'R' for Register, or None if the connection is closed.
-    """
     prompt = "\nSelect an option:\n[L] Login\n[R] Register\n[Q] Quit\n> "
     choice = await asyncio.get_event_loop().run_in_executor(None, input, prompt)
     
@@ -43,9 +41,50 @@ async def get_credentials(is_register: bool) -> Tuple[str, str] | None:
     except EOFError:
         return None
 
-async def prompt_for_command() -> str:
+async def prompt_for_game_action() -> Dict[str, Any] | None:
 
-    return await asyncio.get_event_loop().run_in_executor(None, input, "> ")
+    prompt = "\n[Ação] /move x y | [Chat] Mensagem | /quit\n> "
+    
+    try:
+        raw_input = await asyncio.get_event_loop().run_in_executor(None, input, prompt)
+        raw_input = raw_input.strip()
+        
+        if not raw_input:
+            return {} # Pacote vazio, espera por mais entrada
+        
+        parts = raw_input.split()
+        command = parts[0].lower()
+
+        if command == '/quit':
+            return None # Sinal para fechar a conexão
+
+        if command == '/move':
+            if len(parts) == 3:
+                try:
+                    # Tenta converter as coordenadas para float
+                    x = float(parts[1])
+                    y = float(parts[2])
+                    
+                    return {
+                        "type": PACKET_MOVE,
+                        "x": x,
+                        "y": y
+                    }
+                except ValueError:
+                    print("\nComando /move inválido. Use: /move <x> <y> (ambos devem ser números).")
+                    return {}
+            else:
+                print("\nComando /move inválido. Use: /move <x> <y>.")
+                return {}
+        
+        # Se não for um comando, trata como mensagem de chat
+        return {
+            "type": PACKET_CHAT_MESSAGE,
+            "content": raw_input
+        }
+        
+    except EOFError:
+        return None
 
 async def display_message(message: Any, is_system: bool = False):
     prefix = "[SYSTEM]" if is_system else "[CHAT]"
