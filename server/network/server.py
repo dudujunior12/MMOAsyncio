@@ -1,5 +1,6 @@
 from shared.protocol import (
     PACKET_AUTH,
+    PACKET_ENTITY_REMOVE,
     PACKET_SYSTEM_MESSAGE,
     encode_message,
     decode_message, 
@@ -126,8 +127,16 @@ class ServerSocket:
 
                 if user:
                     logger.info(f"User {user} disconnected from {addr}")
-                    await self.game_engine.player_disconnected(user)
+                    entity_id, asset_type = await self.game_engine.player_disconnected(user)
+                    if entity_id:
+                        removal_packet = {
+                            'type': PACKET_ENTITY_REMOVE,
+                            'entity_id': entity_id,
+                            'asset_type': asset_type,
+                        }
+                        await self.broadcast_game_update(removal_packet, exclude_writer=writer)
                     await self.broadcast_system_message(f"User {user} has left.", exclude_writer=writer)
+
 
                 writer.close()
                 try:

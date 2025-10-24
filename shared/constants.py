@@ -8,6 +8,9 @@ IP = os.getenv("IP", "localhost")
 PORT = int(os.getenv("PORT", "8080"))
 DATA_PAYLOAD_SIZE = int(os.getenv("DATA_PAYLOAD_SIZE", "2048"))
 
+GAME_TICK_RATE = 30 
+TICK_INTERVAL = 1.0 / GAME_TICK_RATE
+
 DB_NAME = os.getenv("DB_NAME", "mmo_db")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")

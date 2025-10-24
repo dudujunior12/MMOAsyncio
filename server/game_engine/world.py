@@ -28,3 +28,8 @@ class World:
             if all(comp_type in components for comp_type in component_types):
                 yield entity_id, [components[comp_type] for comp_type in component_types]
                 
+    def get_components_of_type(self, component_type):
+        for entity_id, components in self.entities.items():
+            if component_type in components:
+                component_instance = components[component_type]
+                yield entity_id, (component_instance,)

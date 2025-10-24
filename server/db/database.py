@@ -44,6 +44,8 @@ async def create_user_table():
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        pos_x REAL DEFAULT 10.0,
+        pos_y REAL DEFAULT 10.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """

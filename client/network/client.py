@@ -1,6 +1,7 @@
 import asyncio
 from shared.protocol import encode_message, decode_message
 from shared.logger import get_logger
+from client.game.world_state import ClientWorldState
 
 logger = get_logger(__name__)
 
@@ -11,6 +12,7 @@ class GameClient:
         self.data_payload_size = data_payload_size
         self.reader = None
         self.writer = None
+        self.world_state = ClientWorldState()
         
     async def connect(self):
         try:
