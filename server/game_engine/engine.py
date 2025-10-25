@@ -65,6 +65,7 @@ class GameEngine:
             "y": initial_y,
             "asset_type": username
         }
+        await self.network_manager.send_packet(writer, new_entity_packet)
         await self.send_aoi_update(entity_id, new_entity_packet, exclude_writer=writer)
         await self._receive_initial_aoi(entity_id, writer)
         
@@ -141,6 +142,7 @@ class GameEngine:
                 }
                 
                 await self.send_aoi_update(entity_id, update_packet, exclude_writer=writer)
+                await self.network_manager.send_packet(writer, update_packet)
         
         elif pkt_type == PACKET_ITEM_USE:
             pass
