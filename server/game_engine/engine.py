@@ -1,5 +1,6 @@
 from shared.logger import get_logger
 from shared.protocol import (
+    PACKET_ENTITY_NEW,
     PACKET_MOVE,
     PACKET_CHAT_MESSAGE,
     PACKET_ITEM_USE,
@@ -13,6 +14,13 @@ from server.game_engine.world import World
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
 from server.db.player import get_player_data, update_player_position
+import math
+
+A_O_I_RANGE = 25.0 # Define o raio de alcance (25 unidades de mapa)
+
+def calculate_distance(pos1: PositionComponent, pos2: PositionComponent) -> float:
+    """Calcula a distância euclidiana entre dois componentes de posição."""
+    return math.sqrt((pos1.x - pos2.x)**2 + (pos1.y - pos2.y)**2)
 
 class GameEngine:
     def __init__(self, db_pool, network_manager):
@@ -34,13 +42,12 @@ class GameEngine:
             #self._update_movement()
             #self._update_combat()
             #self._update_npc_behaviors()
-            await self._sync_world_state()
+            #await self._sync_world_state()
             await asyncio.sleep(TICK_INTERVAL)
         logger.info("Game Loop stopped.")
     
     
     async def player_connected(self, writer, username):
-        
         player_data = await get_player_data(self.db_pool, username)
         initial_x = player_data['pos_x'] if player_data else 10.0
         initial_y = player_data['pos_y'] if player_data else 10.0
@@ -50,6 +57,16 @@ class GameEngine:
         self.world.add_component(entity_id, NetworkComponent(writer, username))
         self.player_entity_map[username] = entity_id
         logger.info(f"Entity {entity_id} created for player {username}.")
+        
+        new_entity_packet = {
+            "type": PACKET_ENTITY_NEW,
+            "entity_id": entity_id,
+            "x": initial_x,
+            "y": initial_y,
+            "asset_type": username
+        }
+        await self.send_aoi_update(entity_id, new_entity_packet, exclude_writer=writer)
+        await self._receive_initial_aoi(entity_id, writer)
         
     async def player_disconnected(self, username):
         entity_id = self.player_entity_map.pop(username, None)
@@ -94,6 +111,22 @@ class GameEngine:
             
             pos_comp = self.world.get_component(entity_id, PositionComponent)
             if pos_comp:
+                
+                current_x = pos_comp.x
+                current_y = pos_comp.y
+                distance_moved = calculate_distance(pos_comp, PositionComponent(new_x, new_y))
+                
+                if distance_moved > 5.0:
+                    logger.warning(f"User {user} attempted invalid move distance ({distance_moved:.2f})")
+                    await self.network_manager.send_packet(writer, {
+                        "type": PACKET_POSITION_UPDATE,
+                        "entity_id": entity_id,
+                        "x": current_x, 
+                        "y": current_y,
+                        "asset_type": user
+                    })
+                    return
+
                 pos_comp.x = new_x
                 pos_comp.y = new_y
                 
@@ -107,12 +140,64 @@ class GameEngine:
                     "asset_type": user
                 }
                 
-                await self.network_manager.broadcast_game_update(update_packet, exclude_writer=writer)
+                await self.send_aoi_update(entity_id, update_packet, exclude_writer=writer)
         
         elif pkt_type == PACKET_ITEM_USE:
             pass
         else:
             logger.warning(f"Unknown packet type received: {pkt_type}")
+            
+    async def send_aoi_update(self, source_entity_id: int, packet: dict, exclude_writer=None):
+        source_pos_comp = self.world.get_component(source_entity_id, PositionComponent)
+        if not source_pos_comp:
+            return
+
+        target_writers = []
+        
+        for target_username, target_entity_id in self.player_entity_map.items():
+            
+            target_network_comp = self.world.get_component(target_entity_id, NetworkComponent)
+            target_pos_comp = self.world.get_component(target_entity_id, PositionComponent)
+            
+            if not target_pos_comp or not target_network_comp:
+                continue
+                
+            writer = target_network_comp.writer
+            
+            if writer == exclude_writer:
+                continue
+
+            distance = calculate_distance(source_pos_comp, target_pos_comp)
+            
+            if distance <= A_O_I_RANGE:
+                target_writers.append(writer)
+
+        for writer in target_writers:
+            await self.network_manager.send_packet(writer, packet)
+            
+    async def _receive_initial_aoi(self, target_entity_id: int, target_writer):
+        target_pos_comp = self.world.get_component(target_entity_id, PositionComponent)
+        if not target_pos_comp:
+            return
+
+        for source_username, source_entity_id in self.player_entity_map.items():
+            if source_entity_id == target_entity_id:
+                continue
+                
+            source_pos_comp = self.world.get_component(source_entity_id, PositionComponent)
+            distance = calculate_distance(target_pos_comp, source_pos_comp)
+            if source_pos_comp and distance <= A_O_I_RANGE:
+                logger.debug(f"AoI Initial Sync: Sending Entity {source_entity_id} to New Player {target_entity_id}. Dist: {distance:.2f}")
+                source_network_comp = self.world.get_component(source_entity_id, NetworkComponent)
+                
+                new_entity_packet = {
+                    "type": PACKET_ENTITY_NEW,
+                    "entity_id": source_entity_id,
+                    "x": source_pos_comp.x,
+                    "y": source_pos_comp.y,
+                    "asset_type": source_network_comp.username if source_network_comp else "NPC"
+                }
+                await self.network_manager.send_packet(target_writer, new_entity_packet)
             
     async def _sync_world_state(self):
         world_state_data = []

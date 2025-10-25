@@ -134,7 +134,7 @@ class ServerSocket:
                             'entity_id': entity_id,
                             'asset_type': asset_type,
                         }
-                        await self.broadcast_game_update(removal_packet, exclude_writer=writer)
+                        await self.game_engine.send_aoi_update(entity_id, removal_packet, exclude_writer=writer)
                     await self.broadcast_system_message(f"User {user} has left.", exclude_writer=writer)
 
 

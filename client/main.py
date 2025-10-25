@@ -4,6 +4,7 @@ from shared.protocol import (
     PACKET_AUTH,
     PACKET_AUTH_SUCCESS,
     PACKET_CHAT_MESSAGE,
+    PACKET_ENTITY_NEW,
     PACKET_ENTITY_REMOVE,
     PACKET_REGISTER,
     PACKET_REGISTER_SUCCESS,
@@ -41,14 +42,22 @@ async def handle_server_messages(client: GameClient):
                         user = message.get("asset_type")
                         await display_message(f"Entity {entity_id} ({user}) moved to ({x}, {y}).", is_system=True)
                         client.world_state.update_entity(message)
-                    elif pkt_type == PACKET_WORLD_STATE:
-                        entities_data = message.get("entities", [])
-                        for entity_data in entities_data:
-                            client.world_state.update_entity(entity_data)
+                    # elif pkt_type == PACKET_WORLD_STATE:
+                    #     entities_data = message.get("entities", [])
+                    #     for entity_data in entities_data:
+                    #         client.world_state.update_entity(entity_data)
+                    
+                    elif pkt_type == PACKET_ENTITY_NEW:
+                        client.world_state.update_entity(message)
+                        entity_id = message.get("entity_id")
+                        asset_type = message.get("asset_type")
+                        x = message.get("x")
+                        y = message.get("y")
+                        await display_message(f"[SYSTEM] Teste New Entity {entity_id} ({asset_type}) joined at ({x}, {y}).", is_system=True)
                         
                     elif pkt_type == PACKET_ENTITY_REMOVE:
                         entity_id = message.get("entity_id")
-                        asset_type = entity_data.get('asset_type')
+                        asset_type = message.get('asset_type')
                         client.world_state.remove_entity(entity_id)
                         asset_to_display = asset_type if asset_type else f"Entity {entity_id}"
                         # remove player from world render
