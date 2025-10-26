@@ -134,17 +134,24 @@ async def main():
     message_task = asyncio.create_task(handle_server_messages(client))
     
     try:
-        await asyncio.gather(input_task, message_task)
+        done, pending = await asyncio.wait(
+            [input_task, message_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        for task in pending:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            
     except Exception as e:
         logger.error(f"Error in main loop: {e}")
+    
     finally:
-        if not input_task.done():
-            input_task.cancel()
-        if not message_task.done():
-            message_task.cancel()
-        client.close()
+        if not client.writer.is_closing():
+            client.close()
         
     logger.info("Client shutdown complete.")
+    sys.exit(0)
     
 
 

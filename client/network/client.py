@@ -16,7 +16,7 @@ class GameClient:
         
     async def connect(self):
         try:
-            self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+            self.reader, self.writer = await asyncio.open_connection(self.host, self.port, limit=self.data_payload_size)
             logger.info(f"Connected to server at {(self.host, self.port)}")
         except Exception as e:
             logger.error(f"Error connecting to server: {e}")
@@ -31,12 +31,34 @@ class GameClient:
             self.close()
             
     async def receive_message(self):
+        if not self.reader: return None
         try:
-            data = await self.reader.readline()
-            if data:
-                decoded_message = decode_message(data.strip())
-                return decoded_message
+            data = await self.reader.readuntil(b'\n') 
+            
+            if not data:
+                logger.info("Server closed the connection gracefully.")
+                self.close()
+                return None
+            
+            decoded_message = decode_message(data.strip())
+            return decoded_message
+            
+        except asyncio.LimitOverrunError as e:
+            
+            logger.error(f"Error receiving message: Packet exceeded configured size limit ({self.data_payload_size} bytes).")
+            
+            try:
+                await self.reader.readuntil(b'\n')
+            except Exception:
+                pass
+            self.close()
             return None
+        
+        except (ConnectionResetError, asyncio.IncompleteReadError) as e:
+            logger.info("Connection closed by server (Expected disconnect after kick message).")
+            self.close()
+            return None
+            
         except Exception as e:
             logger.error(f"Error receiving message: {e}")
             self.close()

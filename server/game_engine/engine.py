@@ -1,6 +1,8 @@
+from server.game_engine.components.collision import CollisionComponent
 from shared.logger import get_logger
 from shared.protocol import (
     PACKET_ENTITY_NEW,
+    PACKET_MAP_DATA,
     PACKET_MOVE,
     PACKET_CHAT_MESSAGE,
     PACKET_ITEM_USE,
@@ -11,9 +13,11 @@ from shared.constants import GAME_TICK_RATE, TICK_INTERVAL
 logger = get_logger(__name__)
 import asyncio
 from server.game_engine.world import World
+from server.game_engine.map import GameMap
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
 from server.db.player import get_player_data, update_player_position
+from server.systems.collision import CollisionSystem
 import math
 
 A_O_I_RANGE = 25.0 # Define o raio de alcance (25 unidades de mapa)
@@ -29,6 +33,8 @@ class GameEngine:
         self.running = False
         self.world = World()
         self.player_entity_map = {}
+        self.map = GameMap()
+        self.collision_system = CollisionSystem(self.map)
         logger.info("Game Engine initialized.")
         
     async def start(self):
@@ -52,11 +58,22 @@ class GameEngine:
         initial_x = player_data['pos_x'] if player_data else 10.0
         initial_y = player_data['pos_y'] if player_data else 10.0
         
+        radius = 0.5
+        
         entity_id = self.world.create_entity()
         self.world.add_component(entity_id, PositionComponent(initial_x, initial_y))
         self.world.add_component(entity_id, NetworkComponent(writer, username))
+        self.world.add_component(entity_id, CollisionComponent(radius))
         self.player_entity_map[username] = entity_id
         logger.info(f"Entity {entity_id} created for player {username}.")
+        
+        map_data_packet = {
+            "type": PACKET_MAP_DATA,
+            "data": self.map.get_map_data_for_client()
+        }
+        await self.network_manager.send_packet(writer, map_data_packet)
+        logger.debug(f"Map data sent to player {username}.")
+        
         
         new_entity_packet = {
             "type": PACKET_ENTITY_NEW,
@@ -127,17 +144,29 @@ class GameEngine:
                         "asset_type": user
                     })
                     return
-
-                pos_comp.x = new_x
-                pos_comp.y = new_y
                 
-                logger.debug(f"Updated position for Entity {entity_id} to ({new_x}, {new_y})")
+                moved, final_x, final_y = self.collision_system.process_movement(entity_id, pos_comp, new_x, new_y, self.world)
+                
+                if not moved:
+                    await self.network_manager.send_packet(writer, {
+                        "type": PACKET_POSITION_UPDATE,
+                        "entity_id": entity_id,
+                        "x": current_x, 
+                        "y": current_y,
+                        "asset_type": user
+                    })
+                    return
+
+                pos_comp.x = final_x
+                pos_comp.y = final_y
+                
+                logger.debug(f"Updated position for Entity {entity_id} to ({final_x}, {final_y})")
                 
                 update_packet = {
                     "type": PACKET_POSITION_UPDATE,
                     "entity_id": entity_id,
-                    "x": new_x,
-                    "y": new_y,
+                    "x": final_x,
+                    "y": final_y,
                     "asset_type": user
                 }
                 
