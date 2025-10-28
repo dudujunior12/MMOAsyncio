@@ -1,4 +1,6 @@
 from server.game_engine.components.collision import CollisionComponent
+from server.game_engine.components.health import HealthComponent
+from server.game_engine.components.stats import StatsComponent
 from shared.logger import get_logger
 from shared.protocol import (
     PACKET_ENTITY_NEW,
@@ -7,6 +9,7 @@ from shared.protocol import (
     PACKET_CHAT_MESSAGE,
     PACKET_ITEM_USE,
     PACKET_POSITION_UPDATE,
+    PACKET_SYSTEM_MESSAGE,
 )
 from shared.constants import GAME_TICK_RATE, TICK_INTERVAL
 
@@ -16,7 +19,7 @@ from server.game_engine.world import World
 from server.game_engine.map import GameMap
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
-from server.db.player import get_player_data, update_player_position
+from server.db.player import get_player_data, update_player_data
 from server.systems.collision import CollisionSystem
 import math
 
@@ -55,8 +58,37 @@ class GameEngine:
     
     async def player_connected(self, writer, username):
         player_data = await get_player_data(self.db_pool, username)
-        initial_x = player_data['pos_x'] if player_data else 10.0
-        initial_y = player_data['pos_y'] if player_data else 10.0
+        
+        initial_stats = {
+            'level': 1, 'experience': 0, 'current_health': 100,
+            'strength': 1, 'agility': 1, 'vitality': 1, 
+            'intelligence': 1, 'dexterity': 1, 'luck': 1,
+            'pos_x': 10.0, 'pos_y': 10.0
+        }
+        
+        BASE_HEALTH = 100
+        stats = {**initial_stats, **(player_data if player_data else {})}
+        stats_comp = StatsComponent(
+            level=stats['level'], 
+            experience=stats['experience'],
+            base_health=BASE_HEALTH,
+            strength=stats['strength'],
+            agility=stats['agility'],
+            vitality=stats['vitality'],
+            intelligence=stats['intelligence'],
+            dexterity=stats['dexterity'],
+            luck=stats['luck']
+        )
+        
+        calculated_max_health = stats_comp.get_max_health_for_level()
+        
+        initial_health = calculated_max_health
+        
+        if initial_health > calculated_max_health:
+             initial_health = calculated_max_health
+        
+        initial_x = stats['pos_x']
+        initial_y = stats['pos_y']
         
         radius = 0.5
         
@@ -64,6 +96,8 @@ class GameEngine:
         self.world.add_component(entity_id, PositionComponent(initial_x, initial_y))
         self.world.add_component(entity_id, NetworkComponent(writer, username))
         self.world.add_component(entity_id, CollisionComponent(radius))
+        self.world.add_component(entity_id, stats_comp)
+        self.world.add_component(entity_id, HealthComponent(max_health=calculated_max_health, initial_health=initial_health))
         self.player_entity_map[username] = entity_id
         logger.info(f"Entity {entity_id} created for player {username}.")
         
@@ -80,7 +114,16 @@ class GameEngine:
             "entity_id": entity_id,
             "x": initial_x,
             "y": initial_y,
-            "asset_type": username
+            "asset_type": username,
+            "current_health": initial_health,
+            "max_health": calculated_max_health,
+            "level": stats_comp.level,
+            "strength": stats_comp.strength,
+            "agility": stats_comp.agility,
+            "vitality": stats_comp.vitality,
+            "inteligence": stats_comp.intelligence,
+            "dexterity": stats_comp.dexterity,
+            "luck": stats_comp.luck,
         }
         await self.network_manager.send_packet(writer, new_entity_packet)
         await self.send_aoi_update(entity_id, new_entity_packet, exclude_writer=writer)
@@ -91,9 +134,25 @@ class GameEngine:
         if entity_id:
             network_comp = self.world.get_component(entity_id, NetworkComponent)
             pos_comp = self.world.get_component(entity_id, PositionComponent)
-            if pos_comp:
-                await update_player_position(self.db_pool, username, pos_comp.x, pos_comp.y)
-                logger.info(f"Saved player {username}'s last position: ({pos_comp.x:.1f}, {pos_comp.y:.1f})")
+            health_comp = self.world.get_component(entity_id, HealthComponent)
+            stats_comp = self.world.get_component(entity_id, StatsComponent)
+            if pos_comp and health_comp and stats_comp:
+                await update_player_data(
+                    self.db_pool, 
+                    username, 
+                    pos_comp.x, 
+                    pos_comp.y,
+                    health_comp.current_health,
+                    stats_comp.level,
+                    stats_comp.experience,
+                    stats_comp.strength,
+                    stats_comp.agility,
+                    stats_comp.vitality,
+                    stats_comp.intelligence,
+                    stats_comp.dexterity,
+                    stats_comp.luck
+                )
+                logger.info(f"Saved player {username}'s state: Pos ({pos_comp.x:.1f}, {pos_comp.y:.1f}), HP {health_comp.current_health}, Lvl {stats_comp.level}")
             
             asset_type = network_comp.username if network_comp else f"Entity {entity_id}"
 
@@ -115,10 +174,32 @@ class GameEngine:
 
         entity_id = self.get_player_entity_id(user)
         if pkt_type == PACKET_CHAT_MESSAGE:
-            message = packet.get('content', '')
-            logger.info(f"Entity {entity_id} (User {user}) sent chat message: {message}")
-            response = f"[{user}]: {message}"
-            await self.network_manager.broadcast_chat_message(response, writer)
+            
+            message = packet.get('content', '').strip()
+            
+            if message.startswith('/'):
+
+                parts = message.split()
+                command = parts[0].lower()
+
+                if command == '/stats':
+                    await self.handle_command_stats(entity_id)
+                    # NÃO FAZ BROADCAST
+                
+                # ⭐️ FUTURO: Comando /damage
+                # elif command == '/damage' and len(parts) == 3:
+                #     target_user = parts[1]
+                #     damage_amount_str = parts[2]
+                #     await self.handle_command_damage(entity_id, target_user, damage_amount_str)
+
+                else:
+                    # Comando não reconhecido
+                    await self.send_system_message(entity_id, f"Comando desconhecido: {command}")
+            
+            else:
+                logger.info(f"Entity {entity_id} (User {user}) sent chat message: {message}")
+                response = f"[{user}]: {message}"
+                await self.network_manager.broadcast_chat_message(response, writer)
         elif pkt_type == PACKET_MOVE:
             logger.info(f"Entity {entity_id} (User {user}) sent move packet.")
             new_x = packet.get('x')
@@ -205,6 +286,65 @@ class GameEngine:
 
         for writer in target_writers:
             await self.network_manager.send_packet(writer, packet)
+            
+    async def send_system_message(self, target_entity_id: int, message: str):
+        network_comp = self.world.get_component(target_entity_id, NetworkComponent)
+        if network_comp and network_comp.writer:
+            packet = {
+                "type": PACKET_SYSTEM_MESSAGE, 
+                "content": message
+            }
+            await self.network_manager.send_packet(network_comp.writer, packet)
+
+
+    async def handle_command_stats(self, entity_id: int):
+        
+        stats_comp = self.world.get_component(entity_id, StatsComponent)
+        health_comp = self.world.get_component(entity_id, HealthComponent)
+        network_comp = self.world.get_component(entity_id, NetworkComponent)
+        
+        if not stats_comp or not health_comp or not network_comp:
+            await self.send_system_message(entity_id, "Erro: Componentes de Stats/Vida não encontrados.")
+            return
+
+        try:
+            attack_power = stats_comp.get_attack_power()
+        except AttributeError:
+            attack_power = "N/A (Faltando get_attack_power)"
+        
+        message = (
+            f"--- STATUS DE {network_comp.username.upper()} ---\n"
+            f"Nível: {stats_comp.level} | EXP: {stats_comp.experience}\n"
+            f"Vida: {health_comp.current_health}/{health_comp.max_health}\n"
+            f"Ataque: {attack_power}\n"
+            f"STR: {stats_comp.strength} | AGI: {stats_comp.agility} | VIT: {stats_comp.vitality}\n"
+            f"INT: {stats_comp.intelligence} | DEX: {stats_comp.dexterity} | LUC: {stats_comp.luck}"
+        )
+        
+        await self.send_system_message(entity_id, message)
+            
+    async def apply_damage(self, target_entity_id: int, damage_amount: int, source_entity_id: int = None):
+        
+        health_comp = self.world.get_component(target_entity_id, HealthComponent)
+        
+        if not health_comp or health_comp.is_dead:
+            return False
+
+        damage_dealt = health_comp.take_damage(damage_amount)
+        
+        logger.info(f"Entity {target_entity_id} took {damage_dealt} damage. HP: {health_comp.current_health}/{health_comp.max_health}")
+        
+        # ⭐️ FUTURO: Aqui você enviaria um PACKET_HEALTH_UPDATE para os clientes AoI
+        # Ex: await self.send_aoi_update(target_entity_id, health_update_packet)
+        
+        if health_comp.is_dead:
+            logger.info(f"Entity {target_entity_id} has died.")
+            
+            # ⭐️ FUTURO: Lógica de morte, respawn, drop de item e remoção/reset de entidade viria aqui.
+            await self.broadcast_system_message(f"Entity {target_entity_id} has been defeated.", exclude_writer=None)
+            return True
+            
+        return False
             
     async def _receive_initial_aoi(self, target_entity_id: int, target_writer):
         target_pos_comp = self.world.get_component(target_entity_id, PositionComponent)

@@ -36,9 +36,7 @@ async def close_db_pool():
 
 async def create_user_table():
     global db_pool
-    if db_pool is None:
-        logger.error("Database pool is not initialized.")
-        return
+    # ... (Verificação do pool) ...
     create_table_query = """
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -47,11 +45,23 @@ async def create_user_table():
         pos_x REAL DEFAULT 10.0,
         pos_y REAL DEFAULT 10.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        -- Novos campos serão adicionados via ALTER TABLE para idempotência
     );
     """
     async with db_pool.acquire() as connection:
         try:
             await connection.execute(create_table_query)
-            logger.info("User table ensured in database.")
+            
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS experience INTEGER DEFAULT 0;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_health INTEGER DEFAULT 100;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS strength INTEGER DEFAULT 1;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 1;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS vitality INTEGER DEFAULT 1;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS intelligence INTEGER DEFAULT 1;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS dexterity INTEGER DEFAULT 1;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS luck INTEGER DEFAULT 1;")
+            
+            logger.info("User table and player stats ensured in database.")
         except Exception as e:
-            logger.error(f"Error creating user table: {e}")
+            logger.error(f"Error creating user table or stats columns: {e}")

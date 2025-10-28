@@ -57,11 +57,18 @@ async def prompt_for_game_action() -> Dict[str, Any] | None:
 
         if command == '/quit':
             return None # Sinal para fechar a conexão
+        
+        if command == '/stats':
+            # Envia /stats como um pacote de chat para o servidor processar como comando
+            return {
+                "type": PACKET_CHAT_MESSAGE, 
+                "content": raw_input # Envia a string '/stats'
+            }
 
         if command == '/move':
             if len(parts) == 3:
                 try:
-                    # Tenta converter as coordenadas para float
+
                     x = float(parts[1])
                     y = float(parts[2])
                     
