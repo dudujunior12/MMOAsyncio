@@ -1,6 +1,6 @@
 import math
 from server.game_engine.components.collision import CollisionComponent
-from server.game_engine.map import GameMap, TILE_METADATA
+from server.game_engine.map import GameMap
 
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.world import World

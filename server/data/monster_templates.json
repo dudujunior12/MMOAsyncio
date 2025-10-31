@@ -1,0 +1,42 @@
+{
+  "templates": [
+    {
+      "asset_type": "Green_Slime",
+      "level": 1,
+      "base_health": 30,
+      "strength": 5,
+      "vitality": 2
+    },
+    {
+      "asset_type": "Wolf_Pack_Leader",
+      "level": 5,
+      "base_health": 80,
+      "strength": 15,
+      "vitality": 5
+    }
+  ],
+  "spawn_zones": [
+    {
+      "zone_name": "Forest_Entrance",
+      "monster_asset_type": "Green_Slime",
+      "map_name": "Starting_Area",
+      "min_x": 10.0,
+      "max_x": 30.0,
+      "min_y": 5.0,
+      "max_y": 30.0,
+      "max_mobs_in_zone": 5,
+      "respawn_time_seconds": 30
+    },
+    {
+      "zone_name": "Wolf_Den_North",
+      "monster_asset_type": "Wolf_Pack_Leader",
+      "map_name": "Starting_Area",
+      "min_x": 20.0,
+      "max_x": 35.0,
+      "min_y": 10.0,
+      "max_y": 20.0,
+      "max_mobs_in_zone": 2,
+      "respawn_time_seconds": 60
+    }
+  ]
+}

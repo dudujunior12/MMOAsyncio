@@ -5,6 +5,7 @@ from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.type import TypeComponent
 from server.game_engine.components.network import NetworkComponent
+from server.systems.movement_system import calculate_distance
 from shared.logger import get_logger
 from shared.protocol import (
     PACKET_HEALTH_UPDATE,
@@ -14,10 +15,6 @@ from shared.protocol import (
 )
 
 logger = get_logger(__name__)
-
-import math
-def calculate_distance(pos1: PositionComponent, pos2: PositionComponent) -> float:
-    return math.sqrt((pos1.x - pos2.x)**2 + (pos1.y - pos2.y)**2)
 
 class CombatSystem:
     def __init__(self, world, network_manager, send_aoi_update_func, send_system_message_func):

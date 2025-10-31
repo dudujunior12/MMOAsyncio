@@ -3,9 +3,10 @@ from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.type import TypeComponent
 from server.systems.ai_system import AISystem
-from server.systems.combat_system import CombatSystem
+from server.systems.combat_system import CombatSystem, calculate_distance
 from server.systems.movement_system import MovementSystem
 from server.systems.world_initializer import WorldInitializer
+from server.utils.map_loader import load_map_metadata
 from shared.logger import get_logger
 from shared.protocol import (
     PACKET_DAMAGE,
@@ -19,7 +20,7 @@ from shared.protocol import (
     PACKET_POSITION_UPDATE,
     PACKET_SYSTEM_MESSAGE,
 )
-from shared.constants import GAME_TICK_RATE, TICK_INTERVAL
+from shared.constants import A_O_I_RANGE, GAME_TICK_RATE, TICK_INTERVAL
 
 logger = get_logger(__name__)
 import asyncio
@@ -29,12 +30,6 @@ from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
 from server.db.player import get_player_data, update_player_data
 from server.systems.collision import CollisionSystem
-import math
-
-A_O_I_RANGE = 25.0
-
-def calculate_distance(pos1: PositionComponent, pos2: PositionComponent) -> float:
-    return math.sqrt((pos1.x - pos2.x)**2 + (pos1.y - pos2.y)**2)
 
 class GameEngine:
     def __init__(self, db_pool, network_manager):
@@ -43,7 +38,12 @@ class GameEngine:
         self.running = False
         self.world = World()
         self.player_entity_map = {}
-        self.map = GameMap()
+        initial_map_data = load_map_metadata("Starting_Area")
+        if not initial_map_data:
+            raise Exception("Critical: Could not load initial map metadata.")
+        self.current_map_name = "Starting_Area"
+        self.map = GameMap(self.current_map_name, initial_map_data)
+        
         self.collision_system = CollisionSystem(self.map)
         self.world_initializer = WorldInitializer(self.world, self.map, self.db_pool)
         self.combat_system = CombatSystem(

@@ -1,0 +1,15 @@
+{
+    "base": {
+        "grass": { "is_walkable": true, "speed_modifier": 1.0, "asset_id": 1 },
+        "water": { "is_walkable": false, "speed_modifier": 0.0, "asset_id": 3 }
+    },
+    "mountain_region": {
+        "grass": { "is_walkable": true, "speed_modifier": 0.9, "asset_id": 1 },
+        "mountain": { "is_walkable": false, "speed_modifier": 0.0, "asset_id": 2 },
+        "rocky_path": { "is_walkable": true, "speed_modifier": 0.8, "asset_id": 4 }
+    },
+    "dark_forest": {
+        "forest_floor": { "is_walkable": true, "speed_modifier": 0.7, "asset_id": 5 },
+        "swamp": { "is_walkable": false, "speed_modifier": 0.5, "asset_id": 6 }
+    }
+}

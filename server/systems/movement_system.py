@@ -2,16 +2,11 @@
 
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
+from server.utils.utils import calculate_distance
 from shared.logger import get_logger
 from shared.protocol import PACKET_POSITION_UPDATE
 
-import math
-
 logger = get_logger(__name__)
-
-# Reutilizando a função de distância
-def calculate_distance(pos1: PositionComponent, pos2: PositionComponent) -> float:
-    return math.sqrt((pos1.x - pos2.x)**2 + (pos1.y - pos2.y)**2)
 
 class MovementSystem:
     def __init__(self, world, network_manager, collision_system, send_aoi_update_func):

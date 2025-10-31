@@ -11,8 +11,7 @@ DATA_PAYLOAD_SIZE = int(os.getenv("DATA_PAYLOAD_SIZE", "262144"))
 GAME_TICK_RATE = 30 
 TICK_INTERVAL = 1.0 / GAME_TICK_RATE
 
-MAP_WIDTH = 100
-MAP_HEIGHT = 100
+A_O_I_RANGE = 25.0
 
 DB_NAME = os.getenv("DB_NAME", "mmo_db")
 DB_USER = os.getenv("DB_USER", "postgres")

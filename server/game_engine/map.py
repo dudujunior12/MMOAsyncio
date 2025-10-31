@@ -1,97 +1,104 @@
-# server/game_engine/map.py
 import json
-import os # Para verificar a existência do arquivo
+import os
 
+from server.utils.tile_loader import load_tileset
 from shared.logger import get_logger
-from shared.constants import MAP_WIDTH, MAP_HEIGHT 
 
 logger = get_logger(__name__)
 
-MAP_FILE_NAME = "map_data.json"
-
-
-TILE_TYPE_GRASS = "grass"
-TILE_TYPE_MOUNTAIN = "mountain"
-TILE_TYPE_WATER = "water"
-
-TILE_METADATA = {
-    TILE_TYPE_GRASS: {
-        "is_walkable": True,
-        "speed_modifier": 1.0, 
-        "asset_id": 1,         
-    },
-    TILE_TYPE_MOUNTAIN: {
-        "is_walkable": False,
-        "speed_modifier": 0.0,
-        "asset_id": 2,
-    },
-    TILE_TYPE_WATER: {
-        "is_walkable": False, 
-        "speed_modifier": 0.0,
-        "asset_id": 3,
-    },
-}
-
-
 class GameMap:
     _tile_data: list[list[str]] = []
-    
-    def __init__(self, load_from_file=True):
-        self.MAP_WIDTH = MAP_WIDTH
-        self.MAP_HEIGHT = MAP_HEIGHT
-        self._tile_data = [[TILE_TYPE_GRASS for _ in range(self.MAP_WIDTH)] for _ in range(self.MAP_HEIGHT)]
+    tile_metadata: dict[str, dict] = {}
 
-        if load_from_file and os.path.exists(MAP_FILE_NAME):
+    def __init__(self, map_name: str, map_data: dict, load_from_file=True,):
+        self.MAP_WIDTH = map_data["width"]
+        self.MAP_HEIGHT = map_data["height"]
+        self.MAP_NAME = map_name
+        self.MAP_FILE_PATH = os.path.join("server", "maps", map_data["file"])
+        map_dir = os.path.dirname(self.MAP_FILE_PATH)
+        
+        tileset_key = map_data.get("tileset_key", "base")
+        self.tile_metadata = load_tileset(tileset_key)
+        
+        if not self.tile_metadata:
+            logger.error(f"FATAL: Could not load tileset '{tileset_key}' for map {map_name}. Using critical fallback.")
+            self.tile_metadata = {"grass": {"is_walkable": True, "speed_modifier": 1.0, "asset_id": 1}}
+            
+        default_tile_type = next(iter(self.tile_metadata.keys()), "grass") 
+
+        if not os.path.exists(map_dir):
+            os.makedirs(map_dir, exist_ok=True)
+            logger.info(f"Created map directory: {map_dir}")
+            
+        self._tile_data = [[default_tile_type for _ in range(self.MAP_WIDTH)] for _ in range(self.MAP_HEIGHT)]
+
+        if load_from_file and os.path.exists(self.MAP_FILE_PATH):
             self.load_map_data()
         else:
             if load_from_file:
-                logger.warning(f"Map file {MAP_FILE_NAME} not found. Generating default map...")
+                logger.warning(f"Map file {self.MAP_FILE_PATH} not found. Generating default map structure for {self.MAP_NAME}...")
             
-            self._generate_default_map()
+            self._generate_default_map() 
             
             if load_from_file:
                 self.save_map_data() 
             
-        logger.info(f"Game Map initialized: {self.MAP_WIDTH}x{self.MAP_HEIGHT} grid.")
+        logger.info(f"Game Map initialized: {self.MAP_WIDTH}x{self.MAP_HEIGHT} grid with tileset '{tileset_key}'.")
 
 
     def _generate_default_map(self):
         
-        self._tile_data = [[TILE_TYPE_GRASS for _ in range(self.MAP_WIDTH)] for _ in range(self.MAP_HEIGHT)]
-
-        for y in range(20, 30):
-            for x in range(20, 30):
-                self._tile_data[y][x] = TILE_TYPE_MOUNTAIN 
-                    
-        for y in range(40, 50):
-            for x in range(50, 60):
-                self._tile_data[y][x] = TILE_TYPE_WATER 
-
-        for i in range(self.MAP_WIDTH):
-            self._tile_data[0][i] = TILE_TYPE_MOUNTAIN
-            self._tile_data[self.MAP_HEIGHT - 1][i] = TILE_TYPE_MOUNTAIN
-            self._tile_data[i][0] = TILE_TYPE_MOUNTAIN
-            self._tile_data[i][self.MAP_WIDTH - 1] = TILE_TYPE_MOUNTAIN
+        available_tiles = list(self.tile_metadata.keys())
         
-        logger.info("Default Game Map generated successfully.")
+        if self.MAP_NAME == "Starting_Area":
+            logger.info("Generating Starter Map structure: Water and simple borders.")
+
+            if "water" in available_tiles:
+                for y in range(40, 50):
+                    for x in range(50, 60):
+                        self._tile_data[y][x] = "water"
+            
+            border_tile = "mountain" if "mountain" in available_tiles else available_tiles[0] 
+            for i in range(self.MAP_WIDTH):
+                self._tile_data[0][i] = border_tile
+                self._tile_data[self.MAP_HEIGHT - 1][i] = border_tile
+            for i in range(self.MAP_HEIGHT):
+                self._tile_data[i][0] = border_tile
+                self._tile_data[i][self.MAP_WIDTH - 1] = border_tile
+
+        elif self.MAP_NAME == "Dark_Forest":
+            logger.info("Generating Dark Forest structure: Rocky paths and dense unpassable areas.")
+            
+            if "mountain" in available_tiles:
+                for y in range(self.MAP_HEIGHT // 2 - 10, self.MAP_HEIGHT // 2 + 10):
+                    for x in range(10, self.MAP_WIDTH - 10):
+                        if (x % 5 == 0) or (y % 7 == 0):
+                            self._tile_data[y][x] = "mountain"
+        
+        else:
+            logger.warning(f"No specific default generation logic for map: {self.MAP_NAME}. Using flat default tile.")
+
+        logger.info(f"Default map structure generated successfully for {self.MAP_NAME}.")
 
 
     def save_map_data(self):
-        data = self.get_map_data_for_client()
-
-        del data["metadata"] 
+        data = {
+            "width": self.MAP_WIDTH,
+            "height": self.MAP_HEIGHT,
+            "tiles": self._tile_data, 
+        }
         
-        with open(MAP_FILE_NAME, "w") as f:
+        with open(self.MAP_FILE_PATH, "w") as f:
             json.dump(data, f, indent=4)
-        logger.info(f"Map data saved to {MAP_FILE_NAME}.")
+        logger.info(f"Map data saved to {self.MAP_FILE_PATH}.")
 
     def load_map_data(self):
-        with open(MAP_FILE_NAME, "r") as f:
+        with open(self.MAP_FILE_PATH, "r") as f:
             data = json.load(f)
             self.MAP_WIDTH = data["width"]
             self.MAP_HEIGHT = data["height"]
             self._tile_data = data["tiles"]
-        logger.info(f"Map data loaded from {MAP_FILE_NAME}: {self.MAP_WIDTH}x{self.MAP_HEIGHT}")
+        logger.info(f"Map data loaded from {self.MAP_FILE_PATH}: {self.MAP_WIDTH}x{self.MAP_HEIGHT}")
 
 
     def get_tile_type(self, x: float, y: float) -> str | None:
@@ -109,10 +116,10 @@ class GameMap:
         if tile_type is None:
             return False 
             
-        metadata = TILE_METADATA.get(tile_type)
+        metadata = self.tile_metadata.get(tile_type)
         
         if not metadata:
-             logger.error(f"Tile type {tile_type} has no metadata!")
+             logger.error(f"Tile type '{tile_type}' in map data has no metadata in tileset!")
              return False
              
         return metadata["is_walkable"]
@@ -122,5 +129,5 @@ class GameMap:
             "width": self.MAP_WIDTH,
             "height": self.MAP_HEIGHT,
             "tiles": self._tile_data, 
-            "metadata": TILE_METADATA 
+            "metadata": self.tile_metadata
         }
