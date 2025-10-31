@@ -1,3 +1,5 @@
+from server.db.npcs import get_initial_spawns
+from server.game_engine.components.ai import AIComponent
 from server.game_engine.components.collision import CollisionComponent
 from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.stats import StatsComponent
@@ -9,32 +11,26 @@ from shared.logger import get_logger
 logger = get_logger(__name__)
 
 class WorldInitializer:
-    def __init__(self, world, game_map):
+    def __init__(self, world, game_map, db_pool):
         self.world = world
         self.game_map = game_map
+        self.db_pool = db_pool
 
-    def initialize_world(self):
+    async def initialize_world(self):
 
         logger.info("Starting world initialization and map loading...")
 
-        self._spawn_initial_npcs()
+        await self._spawn_initial_npcs()
 
         logger.info("World initialization complete. Game ready.")
 
-    def _spawn_initial_npcs(self):
+    async def _spawn_initial_npcs(self):
 
-        initial_npcs = [
-            {
-                'x': 20.0, 'y': 5.0, 
-                'asset_type': 'Green_Slime', 
-                'level': 1, 'base_health': 30, 'strength': 5, 'vitality': 2
-            },
-            {
-                'x': 25.0, 'y': 15.0, 
-                'asset_type': 'Wolf_Pack_Leader', 
-                'level': 5, 'base_health': 80, 'strength': 15, 'vitality': 5
-            }
-        ]
+        initial_npcs = await get_initial_spawns(self.db_pool)
+
+        if not initial_npcs:
+            logger.warning("No initial NPC spawn data found in the database. Spawning skipped.")
+            return
 
         for npc_data in initial_npcs:
             self._create_npc_entity(**npc_data)
@@ -62,7 +58,12 @@ class WorldInitializer:
         self.world.add_component(npc_entity_id, HealthComponent(max_health=calculated_max_health, initial_health=calculated_max_health))
         
         self.world.add_component(npc_entity_id, TypeComponent(entity_type='monster'))
-        self.world.add_component(npc_entity_id, NetworkComponent(writer=None, username=asset_type)) 
+        self.world.add_component(npc_entity_id, NetworkComponent(writer=None, username=asset_type))
+        self.world.add_component(npc_entity_id, AIComponent(
+            initial_state='wandering', 
+            home_x=x, 
+            home_y=y
+        ))
         
         logger.info(f"NPC Entity {npc_entity_id} ('{asset_type}') spawned at ({x}, {y}).")
 

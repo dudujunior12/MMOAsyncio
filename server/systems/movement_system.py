@@ -74,3 +74,35 @@ class MovementSystem:
             "y": y,
             "asset_type": user
         })
+        
+    async def handle_npc_move(self, entity_id: int, new_x: float, new_y: float):
+
+        pos_comp = self.world.get_component(entity_id, PositionComponent)
+        network_comp = self.world.get_component(entity_id, NetworkComponent)
+        
+        if not pos_comp or not network_comp:
+            return
+            
+        asset_type = network_comp.username 
+        
+        moved, final_x, final_y = self.collision_system.process_movement(
+            entity_id, pos_comp, new_x, new_y, self.world
+        )
+        
+        if not moved:
+            return
+
+        pos_comp.x = final_x
+        pos_comp.y = final_y
+        
+        update_packet = {
+            "type": PACKET_POSITION_UPDATE,
+            "entity_id": entity_id,
+            "x": final_x,
+            "y": final_y,
+            "asset_type": asset_type
+        }
+        
+        await self.send_aoi_update(entity_id, update_packet, exclude_writer=None)
+        
+        logger.debug(f"NPC {asset_type} moved to ({final_x:.1f}, {final_y:.1f})")

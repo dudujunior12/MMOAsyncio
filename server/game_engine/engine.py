@@ -2,6 +2,7 @@ from server.game_engine.components.collision import CollisionComponent
 from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.type import TypeComponent
+from server.systems.ai_system import AISystem
 from server.systems.combat_system import CombatSystem
 from server.systems.movement_system import MovementSystem
 from server.systems.world_initializer import WorldInitializer
@@ -44,7 +45,7 @@ class GameEngine:
         self.player_entity_map = {}
         self.map = GameMap()
         self.collision_system = CollisionSystem(self.map)
-        self.world_initializer = WorldInitializer(self.world, self.map)
+        self.world_initializer = WorldInitializer(self.world, self.map, self.db_pool)
         self.combat_system = CombatSystem(
             self.world, 
             self.network_manager, 
@@ -57,11 +58,16 @@ class GameEngine:
             self.collision_system,
             self.send_aoi_update
         )
+        self.ai_system = AISystem(
+            self.world,
+            self.movement_system,
+            self.send_aoi_update
+        )
         logger.info("Game Engine initialized.")
         
     async def start(self):
         self.running = True
-        self.world_initializer.initialize_world()
+        await self.world_initializer.initialize_world()
         logger.info("Game Engine started. Starting game loop at {} ticks per second.".format(GAME_TICK_RATE))
         asyncio.create_task(self._run_game_loop())
         
@@ -70,6 +76,7 @@ class GameEngine:
             #self._update_movement()
             #self._update_combat()
             #self._update_npc_behaviors()
+            #await self.ai_system.run() descomentar para voltar a funcionar movimento de npc
             await asyncio.sleep(TICK_INTERVAL)
         logger.info("Game Loop stopped.")
     
