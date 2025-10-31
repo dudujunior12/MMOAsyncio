@@ -54,7 +54,7 @@ async def create_user_table():
             
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS experience INTEGER DEFAULT 0;")
-            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_health INTEGER DEFAULT 100;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_health INTEGER DEFAULT NULL;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS strength INTEGER DEFAULT 1;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 1;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS vitality INTEGER DEFAULT 1;")

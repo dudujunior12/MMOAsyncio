@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Literal, Tuple, Any
 
-from shared.protocol import PACKET_CHAT_MESSAGE, PACKET_MOVE
+from shared.protocol import PACKET_CHAT_MESSAGE, PACKET_DAMAGE, PACKET_MOVE
 
 async def get_auth_choice() -> Literal['L', 'R'] | None:
     prompt = "\nSelect an option:\n[L] Login\n[R] Register\n[Q] Quit\n> "
@@ -64,6 +64,22 @@ async def prompt_for_game_action() -> Dict[str, Any] | None:
                 "type": PACKET_CHAT_MESSAGE, 
                 "content": raw_input # Envia a string '/stats'
             }
+            
+        if command == '/damage':
+            if len(parts) == 2:
+                try:
+                    target_entity_id = int(parts[1])
+                    
+                    return {
+                        "type": PACKET_DAMAGE,
+                        "target_entity_id": target_entity_id,
+                    }
+                except ValueError:
+                    print("\nComando /damage inválido. Use: /damage <entity_id> (ID deve ser número inteiro).")
+                    return {}
+        else:
+            print("\nComando /damage inválido. Use: /damage <entity_id>.")
+            return {}
 
         if command == '/move':
             if len(parts) == 3:

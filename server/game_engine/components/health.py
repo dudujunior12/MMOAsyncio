@@ -30,6 +30,12 @@ class HealthComponent:
             self.current_health = self.max_health
             
         return self.current_health - old_health
+    
+    def heal_to_full(self):
+        heal_amount = self.max_health - self.current_health
+        self.current_health = self.max_health
+        self.is_dead = False
+        return heal_amount
         
     def __repr__(self):
         return f"Health({self.current_health}/{self.max_health})"
