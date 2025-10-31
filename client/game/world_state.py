@@ -15,7 +15,6 @@ class ClientWorldState:
         is_new = entity_id not in self.entities
         current_data = self.entities.get(entity_id, {'id': entity_id})
         
-        # --- Lógica de Posição/Asset (EXISTENTE) ---
         old_x, old_y = current_data.get('x'), current_data.get('y')
         
         current_data['x'] = entity_data.get('x', current_data.get('x'))
@@ -23,8 +22,6 @@ class ClientWorldState:
         current_data['asset_type'] = entity_data.get('asset_type', current_data.get('asset_type'))
         current_data['last_update'] = time.time()
         
-        # --- Lógica de VIDA (NOVO) ---
-        # Atualiza a vida máxima e atual, se presente no pacote
         if 'max_health' in entity_data:
             current_data['max_health'] = entity_data['max_health']
         if 'current_health' in entity_data:

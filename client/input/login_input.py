@@ -77,9 +77,9 @@ async def prompt_for_game_action() -> Dict[str, Any] | None:
                 except ValueError:
                     print("\nComando /damage inválido. Use: /damage <entity_id> (ID deve ser número inteiro).")
                     return {}
-        else:
-            print("\nComando /damage inválido. Use: /damage <entity_id>.")
-            return {}
+            else:
+                print("\nComando /damage inválido. Use: /damage <entity_id>.")
+                return {}
 
         if command == '/move':
             if len(parts) == 3:

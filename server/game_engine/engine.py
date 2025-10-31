@@ -2,6 +2,8 @@ from server.game_engine.components.collision import CollisionComponent
 from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.type import TypeComponent
+from server.systems.combat_system import CombatSystem
+from server.systems.movement_system import MovementSystem
 from server.systems.world_initializer import WorldInitializer
 from shared.logger import get_logger
 from shared.protocol import (
@@ -28,10 +30,9 @@ from server.db.player import get_player_data, update_player_data
 from server.systems.collision import CollisionSystem
 import math
 
-A_O_I_RANGE = 25.0 # Define o raio de alcance (25 unidades de mapa)
+A_O_I_RANGE = 25.0
 
 def calculate_distance(pos1: PositionComponent, pos2: PositionComponent) -> float:
-    """Calcula a distância euclidiana entre dois componentes de posição."""
     return math.sqrt((pos1.x - pos2.x)**2 + (pos1.y - pos2.y)**2)
 
 class GameEngine:
@@ -44,6 +45,18 @@ class GameEngine:
         self.map = GameMap()
         self.collision_system = CollisionSystem(self.map)
         self.world_initializer = WorldInitializer(self.world, self.map)
+        self.combat_system = CombatSystem(
+            self.world, 
+            self.network_manager, 
+            self.send_aoi_update,
+            self.send_system_message
+        )
+        self.movement_system = MovementSystem(
+            self.world,
+            self.network_manager,
+            self.collision_system,
+            self.send_aoi_update
+        )
         logger.info("Game Engine initialized.")
         
     async def start(self):
@@ -57,7 +70,6 @@ class GameEngine:
             #self._update_movement()
             #self._update_combat()
             #self._update_npc_behaviors()
-            #await self._sync_world_state()
             await asyncio.sleep(TICK_INTERVAL)
         logger.info("Game Loop stopped.")
     
@@ -91,18 +103,12 @@ class GameEngine:
         saved_current_health = player_data.get('current_health') if player_data else None
         
         if saved_current_health is None or saved_current_health <= 0:
-            # Cenário 1: Novo jogador (current_health é None/NULL).
-            # Cenário 2: Jogador morto (current_health <= 0).
-            # Em ambos os casos, o jogador começa com a vida cheia calculada.
             initial_health = calculated_max_health
         
         elif saved_current_health > calculated_max_health:
-            # Cenário 3: Vida salva > Vida Máxima atual (ajuste após nerf ou bug).
             initial_health = calculated_max_health
             
         else:
-            # Cenário 4: Jogador existente com vida válida (78, 88, 100, etc.).
-            # Carregamos o valor salvo, sem curar.
             initial_health = saved_current_health
         
         initial_x = stats['pos_x']
@@ -215,27 +221,7 @@ class GameEngine:
             if target_id is None:
                 logger.warning(f"Malformed DAMAGE packet from {user}.")
                 
-            source_pos = self.world.get_component(entity_id, PositionComponent)
-            target_pos = self.world.get_component(target_id, PositionComponent)
-            
-            ATTACK_RANGE = 2.0
-            
-            if not source_pos or not target_pos:
-                await self.send_system_message(entity_id, "Server error in finding player position.")
-                return
-            
-            distance = calculate_distance(source_pos, target_pos)
-            
-            if distance > ATTACK_RANGE:
-                await self.send_system_message(entity_id, "Target is too far to attack.")
-                return
-            
-            damage_amount = await self._calculate_final_damage(entity_id, target_id)
-            
-            is_dead = await self.apply_damage(target_id, damage_amount, entity_id)
-
-            if not is_dead:
-                logger.info(f"Player {user} (Entity {entity_id}) attacked Entity {target_id} for {damage_amount} damage.")
+            await self.combat_system.handle_damage_request(entity_id, target_id)
             
         elif pkt_type == PACKET_MOVE:
             logger.info(f"Entity {entity_id} (User {user}) sent move packet.")
@@ -245,51 +231,7 @@ class GameEngine:
                 logger.warning("Malformed move packet: missing coordinates.")
                 return
             
-            pos_comp = self.world.get_component(entity_id, PositionComponent)
-            if pos_comp:
-                
-                current_x = pos_comp.x
-                current_y = pos_comp.y
-                distance_moved = calculate_distance(pos_comp, PositionComponent(new_x, new_y))
-                
-                if distance_moved > 5.0:
-                    logger.warning(f"User {user} attempted invalid move distance ({distance_moved:.2f})")
-                    await self.network_manager.send_packet(writer, {
-                        "type": PACKET_POSITION_UPDATE,
-                        "entity_id": entity_id,
-                        "x": current_x, 
-                        "y": current_y,
-                        "asset_type": user
-                    })
-                    return
-                
-                moved, final_x, final_y = self.collision_system.process_movement(entity_id, pos_comp, new_x, new_y, self.world)
-                
-                if not moved:
-                    await self.network_manager.send_packet(writer, {
-                        "type": PACKET_POSITION_UPDATE,
-                        "entity_id": entity_id,
-                        "x": current_x, 
-                        "y": current_y,
-                        "asset_type": user
-                    })
-                    return
-
-                pos_comp.x = final_x
-                pos_comp.y = final_y
-                
-                logger.debug(f"Updated position for Entity {entity_id} to ({final_x}, {final_y})")
-                
-                update_packet = {
-                    "type": PACKET_POSITION_UPDATE,
-                    "entity_id": entity_id,
-                    "x": final_x,
-                    "y": final_y,
-                    "asset_type": user
-                }
-                
-                await self.send_aoi_update(entity_id, update_packet, exclude_writer=writer)
-                await self.network_manager.send_packet(writer, update_packet)
+            await self.movement_system.handle_move_request(entity_id, writer, new_x, new_y)
         
         elif pkt_type == PACKET_ITEM_USE:
             pass
@@ -358,132 +300,8 @@ class GameEngine:
         )
         
         await self.send_system_message(entity_id, message)
-        
-    async def _broadcast_health_update(self, entity_id: int, health_comp: HealthComponent):
-        health_update_packet = {
-            "type": PACKET_HEALTH_UPDATE,
-            "entity_id": entity_id,
-            "current_health": health_comp.current_health,
-            "max_health": health_comp.max_health
-        }
-        
-        target_network_comp = self.world.get_component(entity_id, NetworkComponent)
-        target_writer = target_network_comp.writer if target_network_comp else None
-        
-        if target_writer:
-             await self.network_manager.send_packet(target_writer, health_update_packet)
-
-        await self.send_aoi_update(entity_id, health_update_packet, exclude_writer=target_writer)
-            
-    async def apply_damage(self, target_entity_id: int, damage_amount: int, source_entity_id: int = None):
-        
-        health_comp = self.world.get_component(target_entity_id, HealthComponent)
-        
-        if not health_comp or health_comp.is_dead:
-            return False
-
-        damage_dealt = health_comp.take_damage(damage_amount)
-        
-        logger.info(f"Entity {target_entity_id} took {damage_dealt} damage. HP: {health_comp.current_health}/{health_comp.max_health}")
-        
-        await self._broadcast_health_update(target_entity_id, health_comp)
-        
-        source_user = "Unknown"
-        if source_entity_id:
-            source_network_comp = self.world.get_component(source_entity_id, NetworkComponent)
-            if source_network_comp:
-                    source_user = source_network_comp.username
-
-        target_user = self.world.get_component(target_entity_id, NetworkComponent).username if self.world.get_component(target_entity_id, NetworkComponent) else f"Entity {target_entity_id}"
-
-        if source_entity_id:
-            await self.send_system_message(source_entity_id, f"You dealt {damage_dealt} of damage to {target_user}.")
-
-        await self.send_system_message(target_entity_id, f"You received {damage_dealt} of damage from {source_user}. Health left: {health_comp.current_health}/{health_comp.max_health}")
-
-
-        if health_comp.is_dead:
-            logger.info(f"Entity {target_entity_id} has died.")
-            
-            await self.network_manager.broadcast_system_message(f"{target_user} has been defeated!", exclude_writer=None)
-            
-            RESPAWN_X = 10.0 
-            RESPAWN_Y = 10.0 
-            
-            await self._handle_entity_death(target_entity_id, target_user, RESPAWN_X, RESPAWN_Y, source_id=source_entity_id)
-            
-            return True
-            
-        return False
-    
-    async def _calculate_final_damage(self, source_id: int, target_id: int) -> int:
-        source_stats = self.world.get_component(source_id, StatsComponent)
-        target_stats = self.world.get_component(target_id, StatsComponent)
-
-        if not source_stats or not target_stats:
-            return 1 
-
-        raw_attack = source_stats.get_attack_power() 
-        
-        BASE_DEFENSE = 5
-        DEFENSE_BONUS_PER_VIT = 1
-
-        total_defense = BASE_DEFENSE + (target_stats.vitality * DEFENSE_BONUS_PER_VIT)
-
-        final_damage = raw_attack - total_defense
-
-        return max(1, final_damage)
-    
-    async def _handle_entity_death(self, entity_id: int, target_name: str, initial_x: float = 10.0, initial_y: float = 10.0, source_id: int = None):
-        if self.is_player(entity_id):
-            pos_comp = self.world.get_component(entity_id, PositionComponent)
-            health_comp = self.world.get_component(entity_id, HealthComponent)
-            
-            if pos_comp and health_comp:
-                pos_comp.x = initial_x
-                pos_comp.y = initial_y
-                
-                health_comp.heal_to_full() 
-                
-                await self.send_system_message(entity_id, "You have been defeated! Returning to spawn.")
-                
-                respawn_pos_packet = {
-                    "type": PACKET_POSITION_UPDATE,
-                    "entity_id": entity_id,
-                    "x": pos_comp.x,
-                    "y": pos_comp.y,
-                    "asset_type": target_name
-                }
-                await self.send_aoi_update(entity_id, respawn_pos_packet, exclude_writer=None) 
-                
-                await self._broadcast_health_update(entity_id, health_comp)
-            else:
-                logger.error(f"Cannot respawn Player {entity_id}: Missing Position or Health Component.")
-                
-        elif self.is_monster(entity_id):
-            
-            logger.info(f"Monster {target_name} (Entity {entity_id}) died. Removing entity.")
-            
-            # TODO: Adicionar lógica de EXP para o source_id (jogador que matou)
-            # TODO: Adicionar lógica de Drop de Itens
-            
-            remove_packet = {
-                "type": PACKET_ENTITY_REMOVE,
-                "entity_id": entity_id,
-                "asset_type": target_name
-            }
-            await self.send_aoi_update(entity_id, remove_packet) 
-
-            self.world.remove_entity(entity_id)
-            
-            # TODO: Adicionar temporizador de respawn
-            
-        else:
-            logger.warning(f"Entity {entity_id} died but its type ({target_name}) is unknown. Ignoring death logic.")
             
     def get_type_comp(self, entity_id: int):
-        """Método de conveniência para obter o TypeComponent."""
-        # Se não tiver, verifica se é um jogador pela rede (fallback)
         type_comp = self.world.get_component(entity_id, TypeComponent)
         if type_comp:
             return type_comp
@@ -491,12 +309,10 @@ class GameEngine:
         return None
 
     def is_player(self, entity_id: int) -> bool:
-        """Identifica se a entidade é um jogador."""
         type_comp = self.get_type_comp(entity_id)
         return type_comp and type_comp.entity_type == 'player'
 
     def is_monster(self, entity_id: int) -> bool:
-        """Identifica se a entidade é um monstro."""
         type_comp = self.get_type_comp(entity_id)
         return type_comp and type_comp.entity_type == 'monster'
             
@@ -505,8 +321,12 @@ class GameEngine:
         if not target_pos_comp:
             return
 
-        for source_username, source_entity_id in self.player_entity_map.items():
+        for source_entity_id, (source_pos_comp,) in self.world.get_components_of_type(PositionComponent):
             if source_entity_id == target_entity_id:
+                continue
+            
+            source_type_comp = self.world.get_component(source_entity_id, TypeComponent)
+            if not source_type_comp:
                 continue
                 
             source_pos_comp = self.world.get_component(source_entity_id, PositionComponent)
@@ -515,16 +335,27 @@ class GameEngine:
             source_stats_comp = self.world.get_component(source_entity_id, StatsComponent)
             
             distance = calculate_distance(target_pos_comp, source_pos_comp)
+            
             if source_pos_comp and distance <= A_O_I_RANGE:
                 logger.debug(f"AoI Initial Sync: Sending Entity {source_entity_id} to New Player {target_entity_id}. Dist: {distance:.2f}")
-                source_network_comp = self.world.get_component(source_entity_id, NetworkComponent)
+                
+                asset_type = None
+                if source_type_comp.entity_type == 'player':
+                    source_network_comp = self.world.get_component(source_entity_id, NetworkComponent)
+                    asset_type = source_network_comp.username if source_network_comp else "Player_Unknown"
+                else: # NPC, Monster, etc.
+                    # Como você adicionou NetworkComponent aos NPCs com o nome como 'username'
+                    source_network_comp = self.world.get_component(source_entity_id, NetworkComponent)
+                    asset_type = source_network_comp.username if source_network_comp else source_type_comp.entity_type
+                    
+                if not asset_type: continue
                 
                 new_entity_packet = {
                     "type": PACKET_ENTITY_NEW,
                     "entity_id": source_entity_id,
                     "x": source_pos_comp.x,
                     "y": source_pos_comp.y,
-                    "asset_type": source_network_comp.username if source_network_comp else "NPC"
+                    "asset_type": asset_type
                 }
                 
                 if source_health_comp:
