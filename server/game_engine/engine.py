@@ -1,3 +1,4 @@
+from server.game_engine.components.player_class import ClassComponent
 from server.game_engine.components.collision import CollisionComponent
 from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.stats import StatsComponent
@@ -6,18 +7,16 @@ from server.systems.ai_system import AISystem
 from server.systems.combat_system import CombatSystem, calculate_distance
 from server.systems.movement_system import MovementSystem
 from server.systems.world_initializer import WorldInitializer
+from server.utils.class_loader import get_class_metadata
 from server.utils.map_loader import load_map_metadata
 from shared.logger import get_logger
 from shared.protocol import (
     PACKET_DAMAGE,
     PACKET_ENTITY_NEW,
-    PACKET_ENTITY_REMOVE,
-    PACKET_HEALTH_UPDATE,
     PACKET_MAP_DATA,
     PACKET_MOVE,
     PACKET_CHAT_MESSAGE,
     PACKET_ITEM_USE,
-    PACKET_POSITION_UPDATE,
     PACKET_SYSTEM_MESSAGE,
 )
 from shared.constants import A_O_I_RANGE, GAME_TICK_RATE, TICK_INTERVAL
@@ -84,51 +83,74 @@ class GameEngine:
     async def player_connected(self, writer, username):
         player_data = await get_player_data(self.db_pool, username)
         
-        initial_stats = {
-            'level': 1, 'experience': 0,
-            'strength': 1, 'agility': 1, 'vitality': 1, 
-            'intelligence': 1, 'dexterity': 1, 'luck': 1,
-            'pos_x': 10.0, 'pos_y': 10.0
-        }
+        DEFAULT_CLASS = 'Apprentice'
         
-        BASE_HEALTH = 100
-        stats = {**initial_stats, **(player_data if player_data else {})}
-        stats_comp = StatsComponent(
-            level=stats['level'], 
-            experience=stats['experience'],
-            base_health=BASE_HEALTH,
-            strength=stats['strength'],
-            agility=stats['agility'],
-            vitality=stats['vitality'],
-            intelligence=stats['intelligence'],
-            dexterity=stats['dexterity'],
-            luck=stats['luck']
-        )
+        final_data = {}
         
-        calculated_max_health = stats_comp.get_max_health_for_level()
-        
-        saved_current_health = player_data.get('current_health') if player_data else None
-        
-        if saved_current_health is None or saved_current_health <= 0:
-            initial_health = calculated_max_health
-        
-        elif saved_current_health > calculated_max_health:
-            initial_health = calculated_max_health
+        if player_data is None:
+            logger.info(f"New player '{username}'. Loading Apprentice base stats.")
+            metadata = get_class_metadata(DEFAULT_CLASS)
+            if not metadata:
+                logger.error(f"FATAL: Metadata for default class '{DEFAULT_CLASS}' not found.")
+                base_stats = {"base_health": 80, "strength": 2, "agility": 2, "vitality": 2, "intelligence": 2, "dexterity": 2, "luck": 2}
+            else:
+                base_stats = metadata.get("base_stats", {})
             
+            final_data = {
+                'class_name': DEFAULT_CLASS, 
+                'level': 1, 
+                'experience': 0,
+                'pos_x': 10.0, 
+                'pos_y': 10.0,
+                'current_health': None,
+                **base_stats
+            }
         else:
-            initial_health = saved_current_health
+            logger.info(f"Existing player '{username}' (Lvl {player_data.get('level', 1)}) loaded.")
+            final_data = player_data
+            
+            if 'class_name' not in final_data: final_data['class_name'] = DEFAULT_CLASS
+            if 'base_health' not in final_data: final_data['base_health'] = 100
         
-        initial_x = stats['pos_x']
-        initial_y = stats['pos_y']
+        entity_id = self.world.create_entity()
+        
+        class_comp = ClassComponent(class_name=final_data['class_name'])
+        self.world.add_component(entity_id, class_comp)
+
+        stats_comp = StatsComponent(
+            level=final_data['level'], 
+            experience=final_data['experience'],
+            base_health=final_data['base_health'],
+            strength=final_data['strength'],
+            agility=final_data['agility'],
+            vitality=final_data['vitality'],
+            intelligence=final_data['intelligence'],
+            dexterity=final_data['dexterity'],
+            luck=final_data['luck']
+        )
+        self.world.add_component(entity_id, stats_comp)
+        
+        initial_x = final_data['pos_x']
+        initial_y = final_data['pos_y']
         
         radius = 0.5
         
-        entity_id = self.world.create_entity()
         self.world.add_component(entity_id, TypeComponent(entity_type='player'))
         self.world.add_component(entity_id, PositionComponent(initial_x, initial_y))
         self.world.add_component(entity_id, NetworkComponent(writer, username))
         self.world.add_component(entity_id, CollisionComponent(radius))
-        self.world.add_component(entity_id, stats_comp)
+        
+        calculated_max_health = stats_comp.get_max_health_for_level()
+        
+        saved_current_health = final_data.get('current_health')
+        
+        if saved_current_health is None or saved_current_health <= 0:
+            initial_health = calculated_max_health
+        elif saved_current_health > calculated_max_health:
+            initial_health = calculated_max_health
+        else:
+            initial_health = saved_current_health
+        
         self.world.add_component(entity_id, HealthComponent(max_health=calculated_max_health, initial_health=initial_health))
         self.player_entity_map[username] = entity_id
         logger.info(f"Entity {entity_id} created for player {username}.")
@@ -153,7 +175,7 @@ class GameEngine:
             "strength": stats_comp.strength,
             "agility": stats_comp.agility,
             "vitality": stats_comp.vitality,
-            "inteligence": stats_comp.intelligence,
+            "intelligence": stats_comp.intelligence,
             "dexterity": stats_comp.dexterity,
             "luck": stats_comp.luck,
         }
@@ -168,13 +190,15 @@ class GameEngine:
             pos_comp = self.world.get_component(entity_id, PositionComponent)
             health_comp = self.world.get_component(entity_id, HealthComponent)
             stats_comp = self.world.get_component(entity_id, StatsComponent)
-            if pos_comp and health_comp and stats_comp:
+            class_comp = self.world.get_component(entity_id, ClassComponent)
+            if pos_comp and health_comp and stats_comp and class_comp:
                 await update_player_data(
                     self.db_pool, 
                     username, 
                     pos_comp.x, 
                     pos_comp.y,
                     health_comp.current_health,
+                    class_comp.class_name,
                     stats_comp.level,
                     stats_comp.experience,
                     stats_comp.strength,

@@ -38,12 +38,14 @@ async def close_db_pool():
 
 async def create_user_table():
     global db_pool
-    # ... (Verificação do pool) ...
     create_table_query = """
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        class_name TEXT DEFAULT 'Warrior', 
+        level INTEGER DEFAULT 1,
+        xp INTEGER DEFAULT 0,
         pos_x REAL DEFAULT 10.0,
         pos_y REAL DEFAULT 10.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

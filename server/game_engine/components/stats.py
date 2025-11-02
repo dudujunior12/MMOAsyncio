@@ -21,6 +21,25 @@ class StatsComponent:
         self.dexterity = dexterity
         self.luck = luck
         
+        self.xp_to_next_level = self._calculate_xp_needed(self.level)
+        
+    def _calculate_xp_needed(self, level: int) -> int:
+        # Fórmula simples de progressão: Nível * 1000
+        return level * 1000 
+    
+    def add_xp(self, amount: int) -> bool:
+        """Adiciona XP e retorna True se o jogador subiu de nível."""
+        self.experience += amount
+        leveled_up = False
+        
+        while self.experience >= self.xp_to_next_level:
+            self.level += 1
+            self.experience -= self.xp_to_next_level
+            self.xp_to_next_level = self._calculate_xp_needed(self.level)
+            leveled_up = True
+            
+        return leveled_up
+        
     def get_max_health_for_level(self) -> int:
         level_bonus = self.level * 10
         

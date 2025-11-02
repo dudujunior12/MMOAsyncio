@@ -18,6 +18,7 @@ async def update_player_position(db_pool, username: str, x: float, y: float):
 async def update_player_data(db_pool, username: str, 
                              x: float, y: float, 
                              current_health: int,
+                             class_name: str,
                              level: int, experience: int,
                              strength: int, agility: int, vitality: int, 
                              intelligence: int, dexterity: int, luck: int):
@@ -31,20 +32,22 @@ async def update_player_data(db_pool, username: str,
         pos_x = $1, 
         pos_y = $2,
         current_health = $3,
-        level = $4,
-        experience = $5,
-        strength = $6,
-        agility = $7,
-        vitality = $8,
-        intelligence = $9,
-        dexterity = $10,
-        luck = $11
-    WHERE username = $12;
+        class_name = $4,
+        level = $5,
+        experience = $6,
+        strength = $7,
+        agility = $8,
+        vitality = $9,
+        intelligence = $10,
+        dexterity = $11,
+        luck = $12
+    WHERE username = $13;
     """
     async with db_pool.acquire() as connection:
         await connection.execute(query, 
                                  x, y, 
                                  current_health, 
+                                 class_name, 
                                  level, experience, 
                                  strength, agility, vitality, 
                                  intelligence, dexterity, luck, 
@@ -60,7 +63,8 @@ async def get_player_data(db_pool, username: str):
            level, experience, 
            current_health, 
            strength, agility, vitality, 
-           intelligence, dexterity, luck
+           intelligence, dexterity, luck,
+           class_name 
     FROM users
     WHERE username = $1;
     """
@@ -79,5 +83,6 @@ async def get_player_data(db_pool, username: str):
                 'intelligence': record['intelligence'],
                 'dexterity': record['dexterity'],
                 'luck': record['luck'],
+                'class_name': record['class_name']
             }
         return None
