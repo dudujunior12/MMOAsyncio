@@ -5,6 +5,7 @@ from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.type import TypeComponent
 from server.systems.ai_system import AISystem
 from server.systems.combat_system import CombatSystem, calculate_distance
+from server.systems.evolution import EvolutionSystem
 from server.systems.movement_system import MovementSystem
 from server.systems.world_initializer import WorldInitializer
 from server.utils.class_loader import get_class_metadata
@@ -13,6 +14,7 @@ from shared.logger import get_logger
 from shared.protocol import (
     PACKET_DAMAGE,
     PACKET_ENTITY_NEW,
+    PACKET_EVOLVE,
     PACKET_MAP_DATA,
     PACKET_MOVE,
     PACKET_CHAT_MESSAGE,
@@ -62,6 +64,7 @@ class GameEngine:
             self.movement_system,
             self.send_aoi_update
         )
+        self.evolution_system = EvolutionSystem(self.world, self)
         logger.info("Game Engine initialized.")
         
     async def start(self):
@@ -82,87 +85,129 @@ class GameEngine:
     
     async def player_connected(self, writer, username):
         player_data = await get_player_data(self.db_pool, username)
-        
-        DEFAULT_CLASS = 'Apprentice'
-        
+
+        DEFAULT_CLASS = 'Novice'
+
         final_data = {}
-        
+
         if player_data is None:
-            logger.info(f"New player '{username}'. Loading Apprentice base stats.")
-            metadata = get_class_metadata(DEFAULT_CLASS)
-            if not metadata:
-                logger.error(f"FATAL: Metadata for default class '{DEFAULT_CLASS}' not found.")
-                base_stats = {"base_health": 80, "strength": 2, "agility": 2, "vitality": 2, "intelligence": 2, "dexterity": 2, "luck": 2}
-            else:
-                base_stats = metadata.get("base_stats", {})
-            
+            logger.info(f"New player '{username}'. Loading {DEFAULT_CLASS} base stats.")
+            metadata = get_class_metadata(DEFAULT_CLASS) or {}
+            class_bonus = metadata.get("class_bonus", {})
+            base_health = metadata.get("base_health", 100)
+
+            # Inicializa valores que serão persistidos para o player
             final_data = {
-                'class_name': DEFAULT_CLASS, 
-                'level': 1, 
+                'class_name': DEFAULT_CLASS,
+                'level': 1,
                 'experience': 0,
-                'pos_x': 10.0, 
+                'stat_points': 0,
+                'pos_x': 10.0,
                 'pos_y': 10.0,
                 'current_health': None,
-                **base_stats
+                # base stats (persistidos) — jogador começa com os valores da classe base como pontos iniciais
+                'strength': metadata.get('class_bonus', {}).get('strength', 0) + 1,
+                'agility': metadata.get('class_bonus', {}).get('agility', 0) + 1,
+                'vitality': metadata.get('class_bonus', {}).get('vitality', 0) + 1,
+                'intelligence': metadata.get('class_bonus', {}).get('intelligence', 0) + 1,
+                'dexterity': metadata.get('class_bonus', {}).get('dexterity', 0) + 1,
+                'luck': metadata.get('class_bonus', {}).get('luck', 0) + 1,
+                'base_health': base_health
             }
+
         else:
-            logger.info(f"Existing player '{username}' (Lvl {player_data.get('level', 1)}) loaded.")
-            final_data = player_data
-            
-            if 'class_name' not in final_data: final_data['class_name'] = DEFAULT_CLASS
-            if 'base_health' not in final_data: final_data['base_health'] = 100
-        
+            is_fresh_player = player_data.get('level', 0) == 1 and player_data.get('experience', -1) == 0
+            if is_fresh_player:
+                log_message = f"New player '{username}' (freshly registered). Loading {DEFAULT_CLASS} metadata stats."
+            else:
+                log_message = f"Existing player '{username}' (Lvl {player_data.get('level', 1)}) loaded from DB."
+            logger.info(log_message)
+
+            # Inicializa final_data com todos os dados salvos (não sobrescrever)
+            final_data = dict(player_data)  # cópia rasa
+
+            # Assegura campos mínimos existam
+            stats_to_load = ['strength', 'agility', 'vitality', 'intelligence', 'dexterity', 'luck']
+            for stat in stats_to_load:
+                if final_data.get(stat) is None:
+                    # fallback caso DB não tenha campo (campo novo)
+                    final_data[stat] = 1
+
+            # garante base_health
+            class_name = final_data.get('class_name', DEFAULT_CLASS)
+            current_metadata = get_class_metadata(class_name) or {}
+            final_data['base_health'] = final_data.get('base_health', current_metadata.get('base_health', 100))
+            final_data.setdefault('stat_points', 0)
+
+            # Se player foi criado mas é "fresh" (caso especial), re-inicializa posições/vida
+            if is_fresh_player:
+                final_data.update({
+                    'level': 1,
+                    'experience': 0,
+                    'pos_x': 10.0,
+                    'pos_y': 10.0,
+                    'current_health': None,
+                    'stat_points': 0,
+                })
+
+            final_data['class_name'] = final_data.get('class_name', DEFAULT_CLASS)
+
+        # --- Depois de final_data estar pronto, criamos a entidade e os componentes ---
         entity_id = self.world.create_entity()
-        
-        class_comp = ClassComponent(class_name=final_data['class_name'])
+
+        # Classe e metadata
+        class_name = final_data['class_name']
+        class_comp = ClassComponent(class_name=class_name)
         self.world.add_component(entity_id, class_comp)
 
+        # Carrega metadata da classe atual e pega class_bonus
+        class_meta = get_class_metadata(class_name) or {}
+        class_bonus = class_meta.get('class_bonus', {})
+        base_health_from_meta = class_meta.get('base_health', final_data.get('base_health', 100))
+
+        # Se o player tem base_health salvo, preferir o salvo (ex. persistido), se não, usar meta
+        base_health_value = final_data.get('base_health', base_health_from_meta)
+
         stats_comp = StatsComponent(
-            level=final_data['level'], 
-            experience=final_data['experience'],
-            base_health=final_data['base_health'],
-            strength=final_data['strength'],
-            agility=final_data['agility'],
-            vitality=final_data['vitality'],
-            intelligence=final_data['intelligence'],
-            dexterity=final_data['dexterity'],
-            luck=final_data['luck']
+            level=final_data.get('level', 1),
+            experience=final_data.get('experience', 0),
+            base_health=base_health_value,
+            strength=final_data.get('strength', 1),
+            agility=final_data.get('agility', 1),
+            vitality=final_data.get('vitality', 1),
+            intelligence=final_data.get('intelligence', 1),
+            dexterity=final_data.get('dexterity', 1),
+            luck=final_data.get('luck', 1),
+            stat_points=final_data.get('stat_points', 0),
+            class_bonus=class_bonus
         )
         self.world.add_component(entity_id, stats_comp)
-        
-        initial_x = final_data['pos_x']
-        initial_y = final_data['pos_y']
-        
+
+        initial_x = final_data.get('pos_x', 10.0)
+        initial_y = final_data.get('pos_y', 10.0)
+
         radius = 0.5
-        
+
         self.world.add_component(entity_id, TypeComponent(entity_type='player'))
         self.world.add_component(entity_id, PositionComponent(initial_x, initial_y))
         self.world.add_component(entity_id, NetworkComponent(writer, username))
         self.world.add_component(entity_id, CollisionComponent(radius))
-        
+
         calculated_max_health = stats_comp.get_max_health_for_level()
-        
+
         saved_current_health = final_data.get('current_health')
-        
+
         if saved_current_health is None or saved_current_health <= 0:
             initial_health = calculated_max_health
         elif saved_current_health > calculated_max_health:
             initial_health = calculated_max_health
         else:
             initial_health = saved_current_health
-        
+
         self.world.add_component(entity_id, HealthComponent(max_health=calculated_max_health, initial_health=initial_health))
         self.player_entity_map[username] = entity_id
         logger.info(f"Entity {entity_id} created for player {username}.")
-        
-        map_data_packet = {
-            "type": PACKET_MAP_DATA,
-            "data": self.map.get_map_data_for_client()
-        }
-        await self.network_manager.send_packet(writer, map_data_packet)
-        logger.debug(f"Map data sent to player {username}.")
-        
-        
+
         new_entity_packet = {
             "type": PACKET_ENTITY_NEW,
             "entity_id": entity_id,
@@ -172,12 +217,14 @@ class GameEngine:
             "current_health": initial_health,
             "max_health": calculated_max_health,
             "level": stats_comp.level,
-            "strength": stats_comp.strength,
-            "agility": stats_comp.agility,
-            "vitality": stats_comp.vitality,
-            "intelligence": stats_comp.intelligence,
-            "dexterity": stats_comp.dexterity,
-            "luck": stats_comp.luck,
+            "strength": stats_comp.total_strength,
+            "agility": stats_comp.total_agility,
+            "vitality": stats_comp.total_vitality,
+            "intelligence": stats_comp.total_intelligence,
+            "dexterity": stats_comp.total_dexterity,
+            "luck": stats_comp.total_luck,
+            "stat_points": stats_comp.stat_points,
+            "class_name": class_comp.class_name
         }
         await self.network_manager.send_packet(writer, new_entity_packet)
         await self.send_aoi_update(entity_id, new_entity_packet, exclude_writer=writer)
@@ -198,6 +245,7 @@ class GameEngine:
                     pos_comp.x, 
                     pos_comp.y,
                     health_comp.current_health,
+                    stats_comp.stat_points,
                     class_comp.class_name,
                     stats_comp.level,
                     stats_comp.experience,
@@ -240,6 +288,10 @@ class GameEngine:
 
                 if command == '/stats':
                     await self.handle_command_stats(entity_id)
+                elif command == '/evolve':
+                    await self.handle_command_evolve(entity_id, parts)
+                elif command == '/add':
+                    await self.handle_command_add_stat(entity_id, parts)
                 else:
                     await self.send_system_message(entity_id, f"Comando desconhecido: {command}")
             
@@ -263,11 +315,114 @@ class GameEngine:
                 return
             
             await self.movement_system.handle_move_request(entity_id, writer, new_x, new_y)
+            
+        elif pkt_type == PACKET_EVOLVE:
+            target_class_name = packet.get('class_name')
+            if target_class_name:
+                await self.evolution_system.change_class(entity_id, target_class_name)
+            else:
+                logger.warning(f"Malformed EVOLVE packet from {user}: missing class_name.")
+                await self.send_system_message(entity_id, "Erro: Classe alvo de evolução não especificada.")
         
         elif pkt_type == PACKET_ITEM_USE:
             pass
         else:
             logger.warning(f"Unknown packet type received: {pkt_type}")
+            
+    async def handle_command_add_stat(self, entity_id: int, parts: list):
+        """
+        Processa o comando /add <stat>. Ex: /add str
+        """
+        if len(parts) < 2:
+            await self.send_system_message(entity_id, "Use: /add <str|agi|vit|int|dex|luk>")
+            return
+
+        stat_alias = parts[1].lower()
+        stats_comp = self.world.get_component(entity_id, StatsComponent)
+        
+        if not stats_comp: return
+
+        if stats_comp.stat_points <= 0:
+            await self.send_system_message(entity_id, "You do not have enough stat points.")
+            return
+
+        # Mapeamento de apelidos para nomes reais dos atributos
+        stat_map = {
+            'str': 'strength', 
+            'agi': 'agility', 
+            'vit': 'vitality',
+            'int': 'intelligence', 
+            'dex': 'dexterity', 
+            'luk': 'luck'
+        }
+
+        if stat_alias in stat_map:
+            attr_name = stat_map[stat_alias]
+            
+            # Incrementa o atributo
+            current_val = getattr(stats_comp, attr_name)
+            setattr(stats_comp, attr_name, current_val + 1)
+            
+            # Consome o ponto
+            stats_comp.stat_points -= 1
+            
+            # Recalcula HP se mexeu em vitalidade
+            if attr_name == 'vitality':
+                 health_comp = self.world.get_component(entity_id, HealthComponent)
+                 if health_comp:
+                     health_comp.max_health = stats_comp.get_max_health_for_level()
+            
+            await self.send_system_message(entity_id, f"{attr_name.capitalize()} increased to {current_val + 1}. Remaining points: {stats_comp.stat_points}")
+            
+            # Envia atualização visual para o cliente (Importante!)
+            class_comp = self.world.get_component(entity_id, ClassComponent)
+            health_comp = self.world.get_component(entity_id, HealthComponent)
+            
+            # Precisamos acessar o evolution_system para usar o método _send_entity_update
+            # Ou copiar a lógica aqui. Como _send_entity_update é privado lá, vamos replicar o pacote rápido:
+            from shared.protocol import PACKET_ENTITY_UPDATE
+            update_packet = {
+                "type": PACKET_ENTITY_UPDATE,
+                "entity_id": entity_id,
+                "class_name": class_comp.class_name,
+                "level": stats_comp.level,
+                "current_health": health_comp.current_health,
+                "max_health": health_comp.max_health,
+                "strength": stats_comp.strength,
+                "agility": stats_comp.agility,
+                "vitality": stats_comp.vitality,
+                "intelligence": stats_comp.intelligence,
+                "dexterity": stats_comp.dexterity,
+                "luck": stats_comp.luck,
+                # Seria bom enviar stat_points também se o cliente tiver UI para isso
+            }
+            await self.send_aoi_update(entity_id, update_packet)
+            
+        else:
+            await self.send_system_message(entity_id, "Invalid attribute. Use: str, agi, vit, int, dex, luk.")
+            
+    async def handle_command_evolve(self, entity_id: int, parts: list):
+        """Handles the class evolution command."""
+        if not self.is_player(entity_id):
+            await self.send_system_message(entity_id, "Error: Only players can evolve.")
+            return
+
+        if len(parts) < 2:
+            await self.send_system_message(entity_id, "Use: /evolve <TargetClass>")
+            
+            class_comp = self.world.get_component(entity_id, ClassComponent)
+            if class_comp:
+                metadata = get_class_metadata(class_comp.class_name)
+                evolution = metadata.get('evolution')
+                if evolution:
+                    targets = ", ".join(evolution.get('to_classes', []))
+                    await self.send_system_message(entity_id, f"Available evolutions (Level {evolution.get('level')}): {targets}")
+            return
+            
+        target_class_name = parts[1]
+        
+        # Chama o sistema de evolução para processar a mudança
+        await self.evolution_system.change_class(entity_id, target_class_name)
             
     async def send_aoi_update(self, source_entity_id: int, packet: dict, exclude_writer=None):
         source_pos_comp = self.world.get_component(source_entity_id, PositionComponent)
@@ -311,9 +466,10 @@ class GameEngine:
         stats_comp = self.world.get_component(entity_id, StatsComponent)
         health_comp = self.world.get_component(entity_id, HealthComponent)
         network_comp = self.world.get_component(entity_id, NetworkComponent)
+        class_comp = self.world.get_component(entity_id, ClassComponent)
         
-        if not stats_comp or not health_comp or not network_comp:
-            await self.send_system_message(entity_id, "Error: Health/Stats Components not found.")
+        if not stats_comp or not health_comp or not network_comp or not class_comp:
+            await self.send_system_message(entity_id, "Error: Health/Stats/Class Components not found.")
             return
 
         try:
@@ -323,11 +479,17 @@ class GameEngine:
         
         message = (
             f"--- STATUS OF {network_comp.username.upper()} ---\n"
+            f"Class: {class_comp.class_name}\n"
             f"Level: {stats_comp.level} | EXP: {stats_comp.experience}\n"
             f"Health: {health_comp.current_health}/{health_comp.max_health}\n"
             f"Attack: {attack_power}\n"
-            f"STR: {stats_comp.strength} | AGI: {stats_comp.agility} | VIT: {stats_comp.vitality}\n"
-            f"INT: {stats_comp.intelligence} | DEX: {stats_comp.dexterity} | LUC: {stats_comp.luck}"
+            f"STR: {stats_comp.total_strength} (Base {stats_comp.strength} + Bonus {stats_comp.class_bonus.get('strength',0)})\n"
+            f"AGI: {stats_comp.total_agility} (Base {stats_comp.agility} + Bonus {stats_comp.class_bonus.get('agility',0)})\n"
+            f"VIT: {stats_comp.total_vitality} (Base {stats_comp.vitality} + Bonus {stats_comp.class_bonus.get('vitality',0)})\n"
+            f"INT: {stats_comp.total_intelligence} (Base {stats_comp.intelligence} + Bonus {stats_comp.class_bonus.get('intelligence',0)})\n"
+            f"DEX: {stats_comp.total_dexterity} (Base {stats_comp.dexterity} + Bonus {stats_comp.class_bonus.get('dexterity',0)})\n"
+            f"LUC: {stats_comp.total_luck} (Base {stats_comp.luck} + Bonus {stats_comp.class_bonus.get('luck',0)})\n"
+            f"Stat Points Available: {stats_comp.stat_points}"
         )
         
         await self.send_system_message(entity_id, message)

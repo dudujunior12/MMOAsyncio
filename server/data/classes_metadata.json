@@ -1,16 +1,15 @@
-
 {
-  "Apprentice": {
-    "name": "Aprendiz",
+  "Novice": {
+    "name": "Novice",
     "description": "Classe inicial com atributos equilibrados, pode evoluir para classes base.",
-    "base_stats": {
-      "base_health": 80,
-      "strength": 2,
-      "agility": 2,
-      "vitality": 2,
-      "intelligence": 2,
-      "dexterity": 2,
-      "luck": 2
+    "base_health": 80,
+    "class_bonus": {
+      "strength": 0,
+      "agility": 0,
+      "vitality": 0,
+      "intelligence": 0,
+      "dexterity": 0,
+      "luck": 0
     },
     "xp_modifier": 1.0,
     "evolution": {
@@ -19,16 +18,16 @@
     }
   },
   "Warrior": {
-    "name": "Guerreiro",
+    "name": "Warrior",
     "description": "Classe base focada em combate corpo a corpo e defesa.",
-    "base_stats": {
-      "base_health": 100,
-      "strength": 5,
-      "agility": 3,
-      "vitality": 6,
-      "intelligence": 1,
-      "dexterity": 3,
-      "luck": 2
+    "base_health": 100,
+    "class_bonus": {
+      "strength": 3,
+      "agility": 1,
+      "vitality": 2,
+      "intelligence": 0,
+      "dexterity": 0,
+      "luck": 0
     },
     "xp_modifier": 1.0,
     "evolution": {
@@ -37,16 +36,16 @@
     }
   },
   "Knight": {
-    "name": "Cavaleiro",
+    "name": "Knight",
     "description": "Evolução do Guerreiro, focado em defesa pesada e controle.",
-    "base_stats": {
-      "base_health": 120,
-      "strength": 6,
-      "agility": 2,
-      "vitality": 8,
-      "intelligence": 2,
-      "dexterity": 4,
-      "luck": 3
+    "base_health": 120,
+    "class_bonus": {
+      "strength": 4,
+      "agility": 0,
+      "vitality": 3,
+      "intelligence": 0,
+      "dexterity": 1,
+      "luck": 0
     },
     "xp_modifier": 1.1,
     "evolution": {
@@ -57,14 +56,14 @@
   "Berserker": {
     "name": "Berserker",
     "description": "Evolução do Guerreiro, focado em dano bruto e sacrifício de defesa.",
-    "base_stats": {
-      "base_health": 80,
-      "strength": 8,
-      "agility": 5,
-      "vitality": 5,
-      "intelligence": 1,
-      "dexterity": 4,
-      "luck": 2
+    "base_health": 90,
+    "class_bonus": {
+      "strength": 6,
+      "agility": 2,
+      "vitality": 1,
+      "intelligence": 0,
+      "dexterity": 1,
+      "luck": 0
     },
     "xp_modifier": 0.9,
     "evolution": null

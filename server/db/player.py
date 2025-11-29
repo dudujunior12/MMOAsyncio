@@ -18,6 +18,7 @@ async def update_player_position(db_pool, username: str, x: float, y: float):
 async def update_player_data(db_pool, username: str, 
                              x: float, y: float, 
                              current_health: int,
+                             stat_points: int,
                              class_name: str,
                              level: int, experience: int,
                              strength: int, agility: int, vitality: int, 
@@ -40,8 +41,9 @@ async def update_player_data(db_pool, username: str,
         vitality = $9,
         intelligence = $10,
         dexterity = $11,
-        luck = $12
-    WHERE username = $13;
+        luck = $12,
+        stat_points = $13
+    WHERE username = $14;
     """
     async with db_pool.acquire() as connection:
         await connection.execute(query, 
@@ -50,7 +52,7 @@ async def update_player_data(db_pool, username: str,
                                  class_name, 
                                  level, experience, 
                                  strength, agility, vitality, 
-                                 intelligence, dexterity, luck, 
+                                 intelligence, dexterity, luck, stat_points,
                                  username)
 
 async def get_player_data(db_pool, username: str):
@@ -60,7 +62,7 @@ async def get_player_data(db_pool, username: str):
 
     query = """
     SELECT pos_x, pos_y, 
-           level, experience, 
+           level, experience, stat_points,
            current_health, 
            strength, agility, vitality, 
            intelligence, dexterity, luck,
@@ -77,6 +79,7 @@ async def get_player_data(db_pool, username: str):
                 'level': record['level'],
                 'experience': record['experience'],
                 'current_health': record['current_health'],
+                'stat_points': record['stat_points'],
                 'strength': record['strength'],
                 'agility': record['agility'],
                 'vitality': record['vitality'],

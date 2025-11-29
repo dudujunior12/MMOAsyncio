@@ -6,6 +6,7 @@ from shared.protocol import (
     PACKET_CHAT_MESSAGE,
     PACKET_ENTITY_NEW,
     PACKET_ENTITY_REMOVE,
+    PACKET_ENTITY_UPDATE,
     PACKET_REGISTER,
     PACKET_REGISTER_SUCCESS,
     PACKET_SYSTEM_MESSAGE,
@@ -54,6 +55,16 @@ async def handle_server_messages(client: GameClient):
                         x = message.get("x")
                         y = message.get("y")
                         await display_message(f"[SYSTEM] Teste New Entity {entity_id} ({asset_type}) joined at ({x}, {y}).", is_system=True)
+                        
+                    elif pkt_type == PACKET_ENTITY_UPDATE:
+                        entity_id = message.get("entity_id")
+                        class_name = message.get("class_name", "N/A")
+                        level = message.get("level", "N/A")
+                        
+                        client.world_state.update_entity(message) 
+                        
+                        # Notificação visual
+                        await display_message(f"Entity {entity_id} updated: Class: {class_name}, Level: {level}. Stats updated.", is_system=True)
                         
                     elif pkt_type == PACKET_ENTITY_REMOVE:
                         entity_id = message.get("entity_id")

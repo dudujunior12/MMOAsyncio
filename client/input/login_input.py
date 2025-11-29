@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Literal, Tuple, Any
 
-from shared.protocol import PACKET_CHAT_MESSAGE, PACKET_DAMAGE, PACKET_MOVE
+from shared.protocol import PACKET_CHAT_MESSAGE, PACKET_DAMAGE, PACKET_EVOLVE, PACKET_MOVE
 
 async def get_auth_choice() -> Literal['L', 'R'] | None:
     prompt = "\nSelect an option:\n[L] Login\n[R] Register\n[Q] Quit\n> "
@@ -64,6 +64,37 @@ async def prompt_for_game_action() -> Dict[str, Any] | None:
                 "type": PACKET_CHAT_MESSAGE, 
                 "content": raw_input # Envia a string '/stats'
             }
+            
+        if command == '/evolve':
+            class_name = parts[1] if len(parts) > 1 else None
+
+            if class_name:
+                return {
+                    "type": PACKET_EVOLVE,
+                    "class_name": class_name.strip().capitalize()
+                }
+            else:
+                print("\nComando /evolve inválido. Use: /evolve <nome_da_classe> (ex: /evolve Warrior).")
+                return {}
+            
+        if command == '/add':
+            if len(parts) == 2:
+                stat_alias = parts[1].lower()
+                # Verifica se o apelido é válido antes de enviar (opcional, mas bom para feedback imediato)
+                valid_stats = ['str', 'agi', 'vit', 'int', 'dex', 'luk']
+                if stat_alias in valid_stats:
+                    # Envia /add <stat> como um pacote de chat para o servidor
+                    # O servidor tem a lógica para processar /add
+                    return {
+                        "type": PACKET_CHAT_MESSAGE,
+                        "content": raw_input # Envia a string '/add str'
+                    }
+                else:
+                    print("\nComando /add inválido. Atributos válidos: str, agi, vit, int, dex, luk.")
+                    return {}
+            else:
+                print("\nComando /add inválido. Use: /add <atributo> (ex: /add str).")
+                return {}
             
         if command == '/damage':
             if len(parts) == 2:

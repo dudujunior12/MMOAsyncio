@@ -11,7 +11,8 @@ from shared.protocol import (
     PACKET_HEALTH_UPDATE,
     PACKET_ENTITY_NEW,
     PACKET_POSITION_UPDATE,
-    PACKET_ENTITY_REMOVE
+    PACKET_ENTITY_REMOVE,
+    PACKET_SYSTEM_MESSAGE
 )
 
 logger = get_logger(__name__)
@@ -38,6 +39,15 @@ class CombatSystem:
         if not source_pos or not target_pos:
             await self.send_system_message(source_entity_id, "Server error: Target or self position not found.")
             return
+        
+        if source_entity_id == target_entity_id:
+            source_network_comp = self.world.get_component(source_entity_id, NetworkComponent)
+            if source_network_comp:
+                await self.network_manager.send_packet(source_network_comp.writer, {
+                    "type": PACKET_SYSTEM_MESSAGE,
+                    "content": "You cannot attack yourself."
+            })
+            return
 
         distance = calculate_distance(source_pos, target_pos)
         
@@ -54,20 +64,24 @@ class CombatSystem:
 
 
     def _calculate_final_damage(self, source_id: int, target_id: int) -> int:
-        """Calcula o dano final considerando ataque e defesa."""
-        source_stats = self.world.get_component(source_id, StatsComponent)
-        target_stats = self.world.get_component(target_id, StatsComponent)
+        """Calcula o dano final usando atributos totais (base + bônus da classe)."""
+
+        source_stats: StatsComponent = self.world.get_component(source_id, StatsComponent)
+        target_stats: StatsComponent = self.world.get_component(target_id, StatsComponent)
 
         if not source_stats or not target_stats:
-            return 1 
+            return 1
 
-        raw_attack = source_stats.get_attack_power() 
-        
+        # --- ATAQUE (correta: usa total_strength) ---
+        raw_attack = source_stats.get_attack_power()
+
+        # --- DEFESA correta usando total_vitality ---
         BASE_DEFENSE = 5
-        DEFENSE_BONUS_PER_VIT = 1
+        DEFENSE_PER_VIT = 1
 
-        total_defense = BASE_DEFENSE + (target_stats.vitality * DEFENSE_BONUS_PER_VIT)
+        total_defense = BASE_DEFENSE + (target_stats.total_vitality * DEFENSE_PER_VIT)
 
+        # --- DANO FINAL ---
         final_damage = raw_attack - total_defense
 
         return max(1, final_damage)

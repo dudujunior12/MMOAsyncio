@@ -43,13 +43,12 @@ async def create_user_table():
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        class_name TEXT DEFAULT 'Warrior', 
+        class_name TEXT DEFAULT 'Novice', 
         level INTEGER DEFAULT 1,
         xp INTEGER DEFAULT 0,
         pos_x REAL DEFAULT 10.0,
         pos_y REAL DEFAULT 10.0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        -- Novos campos serão adicionados via ALTER TABLE para idempotência
     );
     """
     async with db_pool.acquire() as connection:
@@ -58,6 +57,7 @@ async def create_user_table():
             
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS experience INTEGER DEFAULT 0;")
+            await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stat_points INTEGER DEFAULT 0;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_health INTEGER DEFAULT NULL;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS strength INTEGER DEFAULT 1;")
             await connection.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 1;")
