@@ -6,6 +6,7 @@ from client.game.handlers.health_handler import HealthHandler
 from client.game.handlers.movement_handler import MovementHandler
 from client.game.handlers.system_handler import SystemHandler
 from client.game.handlers.world_state_handler import WorldStateHandler
+from client.game.systems.chat_system import ChatSystem
 from shared.protocol import decode_message
 from shared.protocol import (PACKET_POSITION_UPDATE, PACKET_AUTH_SUCCESS, PACKET_REGISTER, PACKET_AUTH, 
                              PACKET_REGISTER_SUCCESS, PACKET_REGISTER_FAIL, PACKET_AUTH_FAIL, PACKET_CHAT_MESSAGE, PACKET_SYSTEM_MESSAGE, 
@@ -27,7 +28,7 @@ class ClientEngine:
             PACKET_DAMAGE: DamageHandler(client),
             PACKET_EVOLVE: EvolveHandler(client),
             PACKET_CHAT_MESSAGE: ChatHandler(client),
-            PACKET_SYSTEM_MESSAGE: SystemHandler(client),
+            PACKET_SYSTEM_MESSAGE: ChatHandler(client),
             PACKET_MAP_DATA: SystemHandler(client),
             PACKET_WORLD_STATE: WorldStateHandler(client),
         }

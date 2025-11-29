@@ -1,6 +1,8 @@
 # client/game/render/renderer.py
 import pygame
 from client.game.systems.camera_system import Camera
+from client.game.systems.chat_system import ChatSystem
+from client.game.ui.chat_ui import ChatUI
 from client.game.ui.status_bar import StatusBar
 from shared.constants import SPRITE_SIZE
 from shared.logger import get_logger
@@ -14,6 +16,7 @@ class GameRenderer:
         self.screen = screen
         self.clock = pygame.time.Clock()
         self.dt = 0.0
+        self.chat_ui = ChatUI(screen)
         self.camera = Camera(self.screen.get_width(), self.screen.get_height())
         self.player_entity_id = player_entity_id
 
@@ -76,6 +79,8 @@ class GameRenderer:
                 color,
                 (draw_x, draw_y, SPRITE_SIZE, SPRITE_SIZE)
             )
+            
+        self.chat_ui.draw()
 
         self.status_bar.draw()
         pygame.display.flip()

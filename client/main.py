@@ -2,6 +2,7 @@ import asyncio
 import pygame
 import sys
 
+from client.game.systems.chat_system import ChatSystem
 from shared.logger import get_logger
 from shared.constants import IP, PORT, DATA_PAYLOAD_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, TICK_INTERVAL
 
@@ -15,8 +16,7 @@ from shared.protocol import PACKET_AUTH, PACKET_REGISTER
 
 logger = get_logger(__name__)
 
-async def show_login_screen(client):
-    screen = pygame.display.set_mode((900, 700))
+async def show_login_screen(screen):
     pygame.display.set_caption("MMO - Login")
     clock = pygame.time.Clock()
 
@@ -52,6 +52,8 @@ async def game_loop(client, client_engine, renderer):
     running = True
     accumulator = 0.0
 
+    chat_system = ChatSystem(client, renderer.chat_ui, client.username)
+
     while running and not client.is_closed:
         dt = renderer.clock.tick(60) / 1000.0
         renderer.dt = dt
@@ -61,13 +63,23 @@ async def game_loop(client, client_engine, renderer):
             if event.type == pygame.QUIT:
                 logger.info("[DEBUG] Exiting game loop...")
                 running = False
-            handle_key_event(event)
+                break
 
-        while accumulator >= TICK_INTERVAL:
-            move_packet = get_movement_packet()
-            if move_packet:
-                await client.send_message(move_packet)
-            accumulator -= TICK_INTERVAL
+            chat_result = renderer.chat_ui.handle_event(event)
+            if chat_result is not None:
+                if chat_result != "":
+                    await chat_system.send_message(chat_result)
+                continue
+
+            if not renderer.chat_ui.active:
+                handle_key_event(event)
+
+        if not renderer.chat_ui.active:
+            while accumulator >= TICK_INTERVAL:
+                move_packet = get_movement_packet()
+                if move_packet:
+                    await client.send_message(move_packet)
+                accumulator -= TICK_INTERVAL
 
         renderer.draw()
         await asyncio.sleep(0)
@@ -91,7 +103,7 @@ async def main():
         logger.error("Failed to connect to server.")
         return
     
-    client_engine = ClientEngine(client)
+    
 
     username, password = await show_login_screen(screen)
     client.username = username
@@ -110,10 +122,13 @@ async def main():
 
     logger.info(f"Welcome {username}!")
 
-    asyncio.create_task(network_loop(client_engine))
+    
     
     renderer = GameRenderer(client.world_state, screen, None)
     client.renderer = renderer
+    client_engine = ClientEngine(client)
+    asyncio.create_task(network_loop(client_engine))
+    
     await game_loop(client, client_engine, renderer)
 
 

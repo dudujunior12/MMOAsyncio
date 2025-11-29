@@ -175,9 +175,14 @@ class ServerSocket:
         user_info = self.clients.get(writer)
         return user_info['user'] if user_info else None
             
-    async def broadcast_chat_message(self, message: str, exclude_writer=None):
-        chat_packet = {'type': PACKET_CHAT_MESSAGE, 'content': message}
+    async def broadcast_chat_message(self, sender: str, message: str, exclude_writer=None):
+        chat_packet = {
+            'type': PACKET_CHAT_MESSAGE,
+            'sender': sender,
+            'content': message
+        }
         encoded_message = encode_message(chat_packet)
+
         for writer in self.clients.keys():
             if writer != exclude_writer:
                 try:

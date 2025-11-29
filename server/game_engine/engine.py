@@ -299,9 +299,7 @@ class GameEngine:
                 parts = message.split()
                 command = parts[0].lower()
 
-                if command == '/stats':
-                    await self.handle_command_stats(entity_id)
-                elif command == '/evolve':
+                if command == '/evolve':
                     await self.handle_command_evolve(entity_id, parts)
                 elif command == '/add':
                     await self.handle_command_add_stat(entity_id, parts)
@@ -310,8 +308,12 @@ class GameEngine:
             
             else:
                 logger.info(f"Entity {entity_id} (User {user}) sent chat message: {message}")
-                response = f"[{user}]: {message}"
-                await self.network_manager.broadcast_chat_message(response, writer)
+
+                await self.network_manager.broadcast_chat_message(
+                    sender=user,
+                    message=message,
+                    exclude_writer=None
+                )
         elif pkt_type == PACKET_DAMAGE:
             target_id = packet.get('target_entity_id')
             if target_id is None:
@@ -497,39 +499,6 @@ class GameEngine:
                 "content": message
             }
             await self.network_manager.send_packet(network_comp.writer, packet)
-
-    async def handle_command_stats(self, entity_id: int):
-        
-        stats_comp = self.world.get_component(entity_id, StatsComponent)
-        health_comp = self.world.get_component(entity_id, HealthComponent)
-        network_comp = self.world.get_component(entity_id, NetworkComponent)
-        class_comp = self.world.get_component(entity_id, ClassComponent)
-        
-        if not stats_comp or not health_comp or not network_comp or not class_comp:
-            await self.send_system_message(entity_id, "Error: Health/Stats/Class Components not found.")
-            return
-
-        try:
-            attack_power = stats_comp.get_attack_power()
-        except AttributeError:
-            attack_power = "N/A (Missing get_attack_power)"
-        
-        message = (
-            f"--- STATUS OF {network_comp.username.upper()} ---\n"
-            f"Class: {class_comp.class_name}\n"
-            f"Level: {stats_comp.level} | EXP: {stats_comp.experience}\n"
-            f"Health: {health_comp.current_health}/{health_comp.max_health}\n"
-            f"Attack: {attack_power}\n"
-            f"STR: {stats_comp.total_strength} (Base {stats_comp.strength} + Bonus {stats_comp.class_bonus.get('strength',0)})\n"
-            f"AGI: {stats_comp.total_agility} (Base {stats_comp.agility} + Bonus {stats_comp.class_bonus.get('agility',0)})\n"
-            f"VIT: {stats_comp.total_vitality} (Base {stats_comp.vitality} + Bonus {stats_comp.class_bonus.get('vitality',0)})\n"
-            f"INT: {stats_comp.total_intelligence} (Base {stats_comp.intelligence} + Bonus {stats_comp.class_bonus.get('intelligence',0)})\n"
-            f"DEX: {stats_comp.total_dexterity} (Base {stats_comp.dexterity} + Bonus {stats_comp.class_bonus.get('dexterity',0)})\n"
-            f"LUC: {stats_comp.total_luck} (Base {stats_comp.luck} + Bonus {stats_comp.class_bonus.get('luck',0)})\n"
-            f"Stat Points Available: {stats_comp.stat_points}"
-        )
-        
-        await self.send_system_message(entity_id, message)
             
     def get_type_comp(self, entity_id: int):
         type_comp = self.world.get_component(entity_id, TypeComponent)
