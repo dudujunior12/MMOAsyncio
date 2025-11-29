@@ -1,5 +1,6 @@
 import json
 import os
+import random
 
 from server.utils.tile_loader import load_tileset
 from shared.logger import get_logger
@@ -10,84 +11,88 @@ class GameMap:
     _tile_data: list[list[str]] = []
     tile_metadata: dict[str, dict] = {}
 
-    def __init__(self, map_name: str, map_data: dict, load_from_file=True,):
+    def __init__(self, map_name: str, map_data: dict, load_from_file=True):
         self.MAP_WIDTH = map_data["width"]
         self.MAP_HEIGHT = map_data["height"]
         self.MAP_NAME = map_name
         self.MAP_FILE_PATH = os.path.join("server", "maps", map_data["file"])
         map_dir = os.path.dirname(self.MAP_FILE_PATH)
-        
+
+        # Tileset
         tileset_key = map_data.get("tileset_key", "base")
         self.tile_metadata = load_tileset(tileset_key)
-        
         if not self.tile_metadata:
-            logger.error(f"FATAL: Could not load tileset '{tileset_key}' for map {map_name}. Using critical fallback.")
+            logger.error(f"FATAL: Could not load tileset '{tileset_key}' for map {map_name}. Using fallback.")
             self.tile_metadata = {"grass": {"is_walkable": True, "speed_modifier": 1.0, "asset_id": 1}}
-            
-        default_tile_type = next(iter(self.tile_metadata.keys()), "grass") 
+
+        default_tile = next(iter(self.tile_metadata.keys()), "grass")
+        self._tile_data = [[default_tile for _ in range(self.MAP_WIDTH)] for _ in range(self.MAP_HEIGHT)]
 
         if not os.path.exists(map_dir):
             os.makedirs(map_dir, exist_ok=True)
             logger.info(f"Created map directory: {map_dir}")
-            
-        self._tile_data = [[default_tile_type for _ in range(self.MAP_WIDTH)] for _ in range(self.MAP_HEIGHT)]
 
         if load_from_file and os.path.exists(self.MAP_FILE_PATH):
             self.load_map_data()
+            # Corrige tiles inválidos automaticamente
+            self._tile_data = [
+                [t if t in self.tile_metadata else default_tile for t in row]
+                for row in self._tile_data
+            ]
+            logger.info(f"Loaded and sanitized map '{self.MAP_NAME}' from file.")
         else:
             if load_from_file:
-                logger.warning(f"Map file {self.MAP_FILE_PATH} not found. Generating default map structure for {self.MAP_NAME}...")
-            
-            self._generate_default_map() 
-            
+                logger.warning(f"Map file {self.MAP_FILE_PATH} not found. Generating default map for {self.MAP_NAME}...")
+            self.patterns = map_data.get("patterns", {})
+            self._generate_default_map()
             if load_from_file:
-                self.save_map_data() 
-            
-        logger.info(f"Game Map initialized: {self.MAP_WIDTH}x{self.MAP_HEIGHT} grid with tileset '{tileset_key}'.")
+                self.save_map_data()
 
+        logger.info(f"Game Map initialized: {self.MAP_WIDTH}x{self.MAP_HEIGHT} with tileset '{tileset_key}'.")
 
     def _generate_default_map(self):
-        
-        available_tiles = list(self.tile_metadata.keys())
-        
-        if self.MAP_NAME == "Starting_Area":
-            logger.info("Generating Starter Map structure: Water and simple borders.")
+        default_tile = next(iter(self.tile_metadata.keys()), "grass")
+        self._tile_data = [[default_tile for _ in range(self.MAP_WIDTH)] for _ in range(self.MAP_HEIGHT)]
 
-            if "water" in available_tiles:
-                for y in range(40, 50):
-                    for x in range(50, 60):
-                        self._tile_data[y][x] = "water"
-            
-            border_tile = "mountain" if "mountain" in available_tiles else available_tiles[0] 
-            for i in range(self.MAP_WIDTH):
-                self._tile_data[0][i] = border_tile
-                self._tile_data[self.MAP_HEIGHT - 1][i] = border_tile
-            for i in range(self.MAP_HEIGHT):
-                self._tile_data[i][0] = border_tile
-                self._tile_data[i][self.MAP_WIDTH - 1] = border_tile
+        # Função de segurança para tiles
+        def safe_tile(tile_name: str):
+            return tile_name if tile_name in self.tile_metadata else default_tile
 
-        elif self.MAP_NAME == "Dark_Forest":
-            logger.info("Generating Dark Forest structure: Rocky paths and dense unpassable areas.")
-            
-            if "mountain" in available_tiles:
-                for y in range(self.MAP_HEIGHT // 2 - 10, self.MAP_HEIGHT // 2 + 10):
-                    for x in range(10, self.MAP_WIDTH - 10):
-                        if (x % 5 == 0) or (y % 7 == 0):
-                            self._tile_data[y][x] = "mountain"
-        
-        else:
-            logger.warning(f"No specific default generation logic for map: {self.MAP_NAME}. Using flat default tile.")
+        # --- Bordas ---
+        border_tile = safe_tile(self.patterns.get("borders", default_tile))
+        for y in range(self.MAP_HEIGHT):
+            for x in range(self.MAP_WIDTH):
+                if y == 0 or y == self.MAP_HEIGHT - 1 or x == 0 or x == self.MAP_WIDTH - 1:
+                    self._tile_data[y][x] = border_tile
 
-        logger.info(f"Default map structure generated successfully for {self.MAP_NAME}.")
+        # --- Área central ---
+        center = self.patterns.get("center")
+        if center:
+            x_start, x_end = center.get("x_start", 0), center.get("x_end", self.MAP_WIDTH)
+            y_start, y_end = center.get("y_start", 0), center.get("y_end", self.MAP_HEIGHT)
+            center_tile = safe_tile(center.get("tile", default_tile))
+            for y in range(y_start, y_end):
+                for x in range(x_start, x_end):
+                    self._tile_data[y][x] = center_tile
 
+        # --- Tiles aleatórios ---
+        random_cfg = self.patterns.get("random", {})
+        random_tiles = [safe_tile(t) for t in random_cfg.get("tiles", [])]
+        density = random_cfg.get("density", 0.05)
+        for y in range(self.MAP_HEIGHT):
+            for x in range(self.MAP_WIDTH):
+                if self._tile_data[y][x] == default_tile and random_tiles:
+                    if random.random() < density:
+                        self._tile_data[y][x] = random.choice(random_tiles)
+
+        logger.info(f"Default map for '{self.MAP_NAME}' generated with safe tiles.")
 
     def save_map_data(self):
         data = {
             "width": self.MAP_WIDTH,
             "height": self.MAP_HEIGHT,
-            "tiles": self._tile_data, 
+            "tiles": self._tile_data,
         }
-        
         with open(self.MAP_FILE_PATH, "w") as f:
             json.dump(data, f, indent=4)
         logger.info(f"Map data saved to {self.MAP_FILE_PATH}.")
@@ -100,34 +105,26 @@ class GameMap:
             self._tile_data = data["tiles"]
         logger.info(f"Map data loaded from {self.MAP_FILE_PATH}: {self.MAP_WIDTH}x{self.MAP_HEIGHT}")
 
-
     def get_tile_type(self, x: float, y: float) -> str | None:
-        tile_x = int(x)
-        tile_y = int(y)
-        
+        tile_x, tile_y = int(x), int(y)
         if not (0 <= tile_x < self.MAP_WIDTH and 0 <= tile_y < self.MAP_HEIGHT):
-            return None 
-            
+            return None
         return self._tile_data[tile_y][tile_x]
-        
+
     def is_walkable(self, x: float, y: float) -> bool:
         tile_type = self.get_tile_type(x, y)
-        
         if tile_type is None:
-            return False 
-            
+            return False
         metadata = self.tile_metadata.get(tile_type)
-        
         if not metadata:
-             logger.error(f"Tile type '{tile_type}' in map data has no metadata in tileset!")
-             return False
-             
+            logger.error(f"Tile type '{tile_type}' has no metadata!")
+            return False
         return metadata["is_walkable"]
-    
+
     def get_map_data_for_client(self) -> dict:
         return {
             "width": self.MAP_WIDTH,
             "height": self.MAP_HEIGHT,
-            "tiles": self._tile_data, 
+            "tiles": self._tile_data,
             "metadata": self.tile_metadata
         }

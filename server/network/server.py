@@ -56,12 +56,7 @@ class ServerSocket:
             
             entity_id, asset_type = await self.game_engine.player_disconnected(user)
             if entity_id:
-                removal_packet = {
-                    'type': PACKET_ENTITY_REMOVE,
-                    'entity_id': entity_id,
-                    'asset_type': asset_type,
-                }
-                await self.game_engine.send_aoi_update(entity_id, removal_packet, exclude_writer=writer)
+                await self.game_engine.broadcast_entity_removal(entity_id, asset_type, exclude_writer=writer)
                 
             await self.broadcast_system_message(f"User {user} has left.", exclude_writer=writer)
         

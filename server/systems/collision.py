@@ -16,10 +16,10 @@ class CollisionSystem:
         if not self.game_map.is_walkable(new_x, new_y):
             tile_type = self.game_map.get_tile_type(new_x, new_y)
             
-            if tile_type is not None:
-                logger.warning(f"Movement blocked at ({new_x:.2f}, {new_y:.2f}): Tile type '{tile_type}' is not walkable.")
-            else:
-                logger.warning(f"Movement blocked at ({new_x:.2f}, {new_y:.2f}): Outside map boundaries.")
+            # if tile_type is not None:
+            #     logger.warning(f"Movement blocked at ({new_x:.2f}, {new_y:.2f}): Tile type '{tile_type}' is not walkable.")
+            # else:
+            #     logger.warning(f"Movement blocked at ({new_x:.2f}, {new_y:.2f}): Outside map boundaries.")
                 
             return False
         return True
@@ -49,7 +49,7 @@ class CollisionSystem:
             min_distance = current_radius + other_radius
             
             if distance < min_distance:
-                logger.warning(f"Entity {current_entity_id} blocked by Entity {entity_id} at ({target_x:.2f}, {target_y:.2f}).")
+                #logger.warning(f"Entity {current_entity_id} blocked by Entity {entity_id} at ({target_x:.2f}, {target_y:.2f}).")
                 return True
         return False
     

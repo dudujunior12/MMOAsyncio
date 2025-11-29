@@ -16,40 +16,44 @@ class MovementSystem:
         self.send_aoi_update = send_aoi_update_func
         self.MAX_MOVE_DISTANCE = 5.0
 
-    async def handle_move_request(self, entity_id: int, writer, new_x: float, new_y: float):
-
+    async def handle_move_request(self, entity_id: int, writer, dx: float, dy: float):
         pos_comp = self.world.get_component(entity_id, PositionComponent)
         network_comp = self.world.get_component(entity_id, NetworkComponent)
-        
+
         if not pos_comp or not network_comp:
             logger.warning(f"Move request for invalid entity {entity_id}.")
             return
-            
+
         user = network_comp.username
         current_x = pos_comp.x
         current_y = pos_comp.y
-        
-        requested_new_pos = PositionComponent(new_x, new_y)
-        distance_moved = calculate_distance(pos_comp, requested_new_pos)
-        
+
+        # Calcula nova posição alvo
+        requested_new_x = current_x + dx
+        requested_new_y = current_y + dy
+
+        # Verifica distância máxima
+        distance_moved = (dx ** 2 + dy ** 2) ** 0.5
         if distance_moved > self.MAX_MOVE_DISTANCE:
             logger.warning(f"User {user} attempted invalid move distance ({distance_moved:.2f})")
             await self._resync_position(entity_id, writer, current_x, current_y, user)
             return
 
+        # Aplica colisão
         moved, final_x, final_y = self.collision_system.process_movement(
-            entity_id, pos_comp, new_x, new_y, self.world
+            entity_id, pos_comp, requested_new_x, requested_new_y, self.world
         )
-        
+
         if not moved:
             await self._resync_position(entity_id, writer, current_x, current_y, user)
             return
 
+        # Atualiza posição
         pos_comp.x = final_x
         pos_comp.y = final_y
-        
-        logger.debug(f"Updated position for Entity {entity_id} to ({final_x:.1f}, {final_y:.1f})")
-        
+
+        # logger.debug(f"Updated position for Entity {entity_id} to ({final_x:.1f}, {final_y:.1f})")
+
         update_packet = {
             "type": PACKET_POSITION_UPDATE,
             "entity_id": entity_id,
@@ -57,7 +61,8 @@ class MovementSystem:
             "y": final_y,
             "asset_type": user
         }
-        
+
+        # Atualiza clientes na AoI
         await self.send_aoi_update(entity_id, update_packet, exclude_writer=writer)
         await self.network_manager.send_packet(writer, update_packet)
 
@@ -65,7 +70,7 @@ class MovementSystem:
         await self.network_manager.send_packet(writer, {
             "type": PACKET_POSITION_UPDATE,
             "entity_id": entity_id,
-            "x": x, 
+            "x": x,
             "y": y,
             "asset_type": user
         })

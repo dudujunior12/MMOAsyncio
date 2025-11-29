@@ -13,6 +13,7 @@ class GameClient:
         self.reader = None
         self.writer = None
         self.world_state = ClientWorldState()
+        self.is_closed = False
         
     async def connect(self):
         try:
@@ -65,6 +66,8 @@ class GameClient:
             return None
     
     def close(self):
-        if self.writer:
-            self.writer.close()
+        if not self.is_closed:
+            self.is_closed = True
+            if self.writer:
+                self.writer.close()
             logger.info("Connection closed.")

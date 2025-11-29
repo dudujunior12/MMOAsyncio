@@ -6,7 +6,21 @@
     "width": 100,
     "height": 100,
     "initial_player_spawn_x": 10.0,
-    "initial_player_spawn_y": 10.0
+    "initial_player_spawn_y": 10.0,
+    "patterns": {
+      "borders": "mountain",
+      "center": {
+        "x_start": 45,
+        "x_end": 55,
+        "y_start": 45,
+        "y_end": 55,
+        "tile": "water"
+      },
+      "random": {
+        "tiles": ["water"],
+        "density": 0.05
+      }
+    }
   },
   {
     "name": "Dark_Forest",
@@ -15,6 +29,13 @@
     "width": 150,
     "height": 150,
     "initial_player_spawn_x": 5.0,
-    "initial_player_spawn_y": 5.0
+    "initial_player_spawn_y": 5.0,
+    "patterns": {
+      "borders": "swamp",
+      "random": {
+        "tiles": ["swamp"],
+        "density": 0.1
+      }
+    }
   }
 ]

@@ -14,6 +14,7 @@ from shared.logger import get_logger
 from shared.protocol import (
     PACKET_DAMAGE,
     PACKET_ENTITY_NEW,
+    PACKET_ENTITY_REMOVE,
     PACKET_EVOLVE,
     PACKET_MAP_DATA,
     PACKET_MOVE,
@@ -78,7 +79,7 @@ class GameEngine:
             #self._update_movement()
             #self._update_combat()
             #self._update_npc_behaviors()
-            #await self.ai_system.run() descomentar para voltar a funcionar movimento de npc
+            #await self.ai_system.run()
             await asyncio.sleep(TICK_INTERVAL)
         logger.info("Game Loop stopped.")
     
@@ -151,6 +152,18 @@ class GameEngine:
                 })
 
             final_data['class_name'] = final_data.get('class_name', DEFAULT_CLASS)
+            
+        map_packet = {
+            "type": PACKET_MAP_DATA,  # você deve definir esse tipo no seu protocolo
+            "map_name": self.map.MAP_NAME,
+            "width": self.map.MAP_WIDTH,
+            "height": self.map.MAP_HEIGHT,
+            "tiles": self.map._tile_data,
+            "metadata": self.map.tile_metadata
+        }
+        
+        await self.network_manager.send_packet(writer, map_packet)
+        logger.info(f"Sent map '{self.map.MAP_NAME}' to player {username}.")
 
         # --- Depois de final_data estar pronto, criamos a entidade e os componentes ---
         entity_id = self.world.create_entity()
@@ -293,7 +306,7 @@ class GameEngine:
                 elif command == '/add':
                     await self.handle_command_add_stat(entity_id, parts)
                 else:
-                    await self.send_system_message(entity_id, f"Comando desconhecido: {command}")
+                    await self.send_system_message(entity_id, f"Unknown command: {command}")
             
             else:
                 logger.info(f"Entity {entity_id} (User {user}) sent chat message: {message}")
@@ -307,14 +320,14 @@ class GameEngine:
             await self.combat_system.handle_damage_request(entity_id, target_id)
             
         elif pkt_type == PACKET_MOVE:
-            logger.info(f"Entity {entity_id} (User {user}) sent move packet.")
-            new_x = packet.get('x')
-            new_y = packet.get('y')
-            if new_x is None or new_y is None:
-                logger.warning("Malformed move packet: missing coordinates.")
+            #logger.debug(f"Entity {entity_id} (User {user}) sent move packet.")
+            dx = packet.get('dx')
+            dy = packet.get('dy')
+            if dx is None or dy is None:
+                logger.warning("Malformed move packet: missing movement deltas (dx/dy).")
                 return
             
-            await self.movement_system.handle_move_request(entity_id, writer, new_x, new_y)
+            await self.movement_system.handle_move_request(entity_id, writer, dx, dy)
             
         elif pkt_type == PACKET_EVOLVE:
             target_class_name = packet.get('class_name')
@@ -394,7 +407,7 @@ class GameEngine:
                 "intelligence": stats_comp.intelligence,
                 "dexterity": stats_comp.dexterity,
                 "luck": stats_comp.luck,
-                # Seria bom enviar stat_points também se o cliente tiver UI para isso
+                "stat_points": stats_comp.stat_points
             }
             await self.send_aoi_update(entity_id, update_packet)
             
@@ -451,6 +464,30 @@ class GameEngine:
 
         for writer in target_writers:
             await self.network_manager.send_packet(writer, packet)
+            
+    async def broadcast_entity_removal(self, entity_id: int, asset_type: str, exclude_writer=None):
+        """
+        Envia o pacote de remoção de entidade para todos os jogadores, sem precisar de PositionComponent.
+        """
+        removal_packet = {
+            'type': PACKET_ENTITY_REMOVE,
+            'entity_id': entity_id,
+            'asset_type': asset_type,
+        }
+
+        for target_username, target_entity_id in self.player_entity_map.items():
+            target_network_comp = self.world.get_component(target_entity_id, NetworkComponent)
+            if not target_network_comp or not target_network_comp.writer:
+                continue
+
+            writer = target_network_comp.writer
+            if writer == exclude_writer:
+                continue
+
+            try:
+                await self.network_manager.send_packet(writer, removal_packet)
+            except Exception as e:
+                logger.error(f"Error sending entity removal packet to {target_username}: {e}")
             
     async def send_system_message(self, target_entity_id: int, message: str):
         network_comp = self.world.get_component(target_entity_id, NetworkComponent)
