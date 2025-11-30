@@ -16,16 +16,13 @@ class LevelingSystem:
         leveled_up = stats_comp.add_xp(amount)
 
         if leveled_up:
-            # O StatsComponent já adiciona stat_points internamente (5 por level),
-            # mas você pode adicionar lógica extra aqui se quiser.
             health_comp = self.world.get_component(entity_id, HealthComponent)
             if health_comp:
                 new_max = stats_comp.get_max_health_for_level()
                 health_comp.max_health = new_max
-                health_comp.current_health = new_max  # cura ao upar (opcional)
+                health_comp.current_health = new_max
 
             await self.engine.send_system_message(entity_id, f"LEVEL UP! You reached level {stats_comp.level}. (+{5} points per level)")
-            # opcional: enviar pacote de atualização para a AoI
             try:
                 await self.engine.send_aoi_update(entity_id, {
                     "type": "PLAYER_LEVEL_UP",

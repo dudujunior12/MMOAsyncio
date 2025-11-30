@@ -9,6 +9,8 @@ from server.utils.class_loader import get_class_metadata
 from shared.logger import get_logger
 from shared.protocol import PACKET_ENTITY_UPDATE
 
+from server.game_engine.serialization import packet_builder 
+
 logger = get_logger(__name__)
 
 class EvolutionSystem:
@@ -47,22 +49,13 @@ class EvolutionSystem:
             await self.engine.send_system_message(entity_id, f"Minimum Level Requirement not met: You need Level {required_level} to evolve to {target_class_name}.")
             return False
 
-        # --- AQUI NÃO ALTERAMOS stats base do jogador ---
-        # Apenas trocamos a classe e aplicamos os class_bonus e base_health
-
         target_base_health = target_metadata.get("base_health", stats_comp.base_health)
         target_class_bonus = target_metadata.get("class_bonus", {})
 
-        # Atualiza apenas o que é class-related
         class_comp.class_name = target_class_name
-
-        # Atualiza os bônus da classe no componente de stats (não persistir)
         stats_comp.class_bonus = target_class_bonus
-
-        # Atualiza o 'base_health' usado no cálculo de HP (opcional: manter histórico do que já estava salvo)
         stats_comp.base_health = target_base_health
 
-        # Recalcula HP máximo e ajusta atual para novo máximo (cura total na evolução)
         old_max = health_comp.max_health
         new_max = stats_comp.get_max_health_for_level()
         health_comp.max_health = new_max
@@ -71,27 +64,14 @@ class EvolutionSystem:
         await self.engine.send_system_message(entity_id, f"*** CONGRATULATIONS! You have evolved into '{target_class_name}'! ***")
         await self.engine.send_system_message(entity_id, f"Your maximum health changed from {old_max} to {new_max}. Your base attributes were not modified — only class bonuses were applied.")
 
-        # Enviar atualização para a AoI (com valores totais)
-        await self._send_entity_update(entity_id, stats_comp, health_comp, class_comp)
+        await self._send_entity_update(entity_id)
 
         logger.info(f"Entity {entity_id} evolved from {current_class} to {target_class_name} at Level {stats_comp.level}.")
         return True
 
-    async def _send_entity_update(self, entity_id, stats_comp, health_comp, class_comp):
-        update_packet = {
-            "type": PACKET_ENTITY_UPDATE,
-            "entity_id": entity_id,
-            "class_name": class_comp.class_name,
-            "level": stats_comp.level,
-            "current_health": health_comp.current_health,
-            "max_health": health_comp.max_health,
-            # enviar valores totais (base + bônus)
-            "strength": stats_comp.total_strength,
-            "agility": stats_comp.total_agility,
-            "vitality": stats_comp.total_vitality,
-            "intelligence": stats_comp.total_intelligence,
-            "dexterity": stats_comp.total_dexterity,
-            "luck": stats_comp.total_luck,
-            "stat_points": stats_comp.stat_points
-        }
+    async def _send_entity_update(self, entity_id: int):
+        update_packet = packet_builder.serialize_entity(self.world, entity_id)
+        
+        update_packet["type"] = PACKET_ENTITY_UPDATE
+        
         await self.engine.send_aoi_update(entity_id, update_packet)

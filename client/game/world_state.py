@@ -1,4 +1,5 @@
 import time
+from shared.constants import PLAYER_ATTRS
 from shared.logger import get_logger
 
 logger = get_logger(__name__)
@@ -35,8 +36,7 @@ class ClientWorldState:
         
         
         
-        for key in ['max_health', 'current_health', 'level', 'strength', 'agility', 
-                    'vitality', 'intelligence', 'dexterity', 'luck', 'stat_points', 'class_name']:
+        for key in PLAYER_ATTRS:
             if key in entity_data:
                 current_data[key] = entity_data[key]
         

@@ -25,3 +25,18 @@ DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", 5432))
+
+PLAYER_ATTRS = [
+    "level", "experience", "strength", "agility", "vitality",
+    "intelligence", "dexterity", "luck", "stat_points", "class_name",
+    "current_health", "max_health", "base_health"
+]
+
+STAT_ALIAS_MAP = {
+    'str':'strength',
+    'agi':'agility',
+    'vit':'vitality',
+    'int':'intelligence',
+    'dex':'dexterity',
+    'luk':'luck'
+}
