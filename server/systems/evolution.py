@@ -58,7 +58,9 @@ class EvolutionSystem:
 
         old_max = health_comp.max_health
         new_max = stats_comp.get_max_health_for_level()
+        
         health_comp.max_health = new_max
+        
         health_comp.current_health = new_max
 
         await self.engine.send_system_message(entity_id, f"*** CONGRATULATIONS! You have evolved into '{target_class_name}'! ***")

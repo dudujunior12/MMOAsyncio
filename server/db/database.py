@@ -25,9 +25,14 @@ async def init_db_pool():
         return db_pool
     except Exception as e:
         logger.error(f"Error creating database connection pool: {e}")
+        try:
+            if db_pool:
+                await db_pool.close()
+        except Exception:
+            pass
+
         db_pool = None
-        await close_db_pool()
-        return None
+        raise RuntimeError("Failed to initialize database pool") from e
 
 async def close_db_pool():
     global db_pool

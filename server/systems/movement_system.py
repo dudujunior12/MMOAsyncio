@@ -105,4 +105,4 @@ class MovementSystem:
         
         await self.send_aoi_update(entity_id, update_packet, exclude_writer=None)
         
-        logger.debug(f"NPC {asset_type} moved to ({final_x:.1f}, {final_y:.1f})")
+        #logger.debug(f"NPC {asset_type} moved to ({final_x:.1f}, {final_y:.1f})")

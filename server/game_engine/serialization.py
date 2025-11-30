@@ -3,31 +3,44 @@ from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.network import NetworkComponent
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.stats import StatsComponent
+from server.game_engine.components.type import TypeComponent
 from shared.constants import PLAYER_ATTRS
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from server.game_engine.world import World
 
 class PacketBuilder:
 
     def __init__(self):
         self._serializers = {
-            StatsComponent: self._serialize_stats,
+            NetworkComponent: self._serialize_network,
             PositionComponent: self._serialize_position,
+            StatsComponent: self._serialize_stats,
             HealthComponent: self._serialize_health,
             ClassComponent: self._serialize_class,
-            NetworkComponent: self._serialize_network
         }
 
-    def serialize_entity(self, world, entity_id: int) -> dict:
-        packet_data = {"entity_id": entity_id}
+    def serialize_entity(self, world: 'World', entity_id: int) -> dict:
+            packet_data = {"entity_id": entity_id}
 
-        for comp_class, serializer_func in self._serializers.items():
-            component = world.get_component(entity_id, comp_class)
-            if component:
-                packet_data.update(serializer_func(component))
+            # Itera sobre os serializers e atualiza o dicionário
+            for comp_class, serializer_func in self._serializers.items():
+                component = world.get_component(entity_id, comp_class)
+                if component:
+                    # Adiciona todos os dados serializados
+                    packet_data.update(serializer_func(component))
+            
+            # O NetworkComponent deve ter adicionado 'asset_type'. 
+            # Se for um NPC sem NetworkComponent (improvável no seu setup) ou sem username:
+            if "asset_type" not in packet_data:
+                # Caso de emergência, usa o ID como asset_type
+                type_comp = world.get_component(entity_id, TypeComponent)
+                entity_type = type_comp.entity_type if type_comp else "UNKNOWN"
+                packet_data["asset_type"] = f"{entity_type}_{entity_id}"
+                
+            # O HealthComponent deve ser incluído se existir (garantido pelo loop acima e pelo _serialize_health)
 
-        if "asset_type" not in packet_data:
-            packet_data["asset_type"] = f"NPC_{entity_id}"
-
-        return packet_data
+            return packet_data
 
     def _serialize_position(self, comp: PositionComponent) -> dict:
         return {

@@ -43,7 +43,6 @@ class ServerSocket:
             logger.error(f"Error sending packet to {writer.get_extra_info('peername')}: {e}")
     
     async def disconnect_user(self, writer: asyncio.StreamWriter):
-
         user_info = self.clients.pop(writer, None)
         user = user_info['user'] if user_info else None
         addr = writer.get_extra_info('peername')
@@ -51,15 +50,22 @@ class ServerSocket:
         if user:
             if user in self.logged_in_users and self.logged_in_users[user] == writer:
                 del self.logged_in_users[user]
-                
+
             logger.info(f"User {user} disconnected from {addr} (Cleaning up).")
-            
-            entity_id, asset_type = await self.game_engine.player_disconnected(user)
+
+            # Remove do engine
+            entity_id = self.game_engine.get_player_entity_id(user)
             if entity_id:
-                await self.game_engine.broadcast_entity_removal(entity_id, asset_type, exclude_writer=writer)
-                
+                remove_packet = {
+                    "type": PACKET_ENTITY_REMOVE,
+                    "entity_id": entity_id
+                }
+
+                await self.game_engine.send_aoi_update(entity_id, remove_packet, exclude_writer=writer)
+                await self.game_engine.player_disconnected(user)
+
             await self.broadcast_system_message(f"User {user} has left.", exclude_writer=writer)
-        
+
         writer.close()
         try:
             await writer.wait_closed()
@@ -131,7 +137,11 @@ class ServerSocket:
             self.clients[writer] = user_info
             self.logged_in_users[authenticated_user] = writer
             logger.info(f"User {authenticated_user} connected from {addr}")
-            await self.game_engine.player_connected(writer, authenticated_user)
+            try:
+                await self.game_engine.player_connected(writer, authenticated_user)
+            except Exception as e:
+                logger.error(f"Engine error for {authenticated_user}: {e}")
+                await self.disconnect_user(writer)
             
             await self.broadcast_system_message(f"User {authenticated_user} has joined.", exclude_writer=writer)
         

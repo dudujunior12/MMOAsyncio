@@ -32,6 +32,7 @@ from server.game_engine.world import World
 from server.game_engine.map import GameMap
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
+from server.game_engine.components.viewport import ViewportComponent
 from server.db.player import get_player_data, update_player_data
 from server.systems.collision import CollisionSystem
 
@@ -90,15 +91,16 @@ class GameEngine:
         player_data = await get_player_data(self.db_pool, username)
 
         DEFAULT_CLASS = 'Novice'
-
         final_data = {}
 
         if player_data is None:
-            logger.info(f"New player '{username}'. Loading {DEFAULT_CLASS} base stats.")
-            metadata = get_class_metadata(DEFAULT_CLASS) or {}
-            base_stats = metadata.get("base_stats", {})
+            logger.info(f"New player '{username}'. Loading {DEFAULT_CLASS} class metadata.")
 
-            # Inicializa valores que serão persistidos para o player
+            metadata = get_class_metadata(DEFAULT_CLASS) or {}
+
+            class_bonus = metadata.get("class_bonus", {})
+            base_health = metadata.get("base_health", 100)
+
             final_data = {
                 'class_name': DEFAULT_CLASS,
                 'level': 1,
@@ -107,56 +109,35 @@ class GameEngine:
                 'pos_x': 10.0,
                 'pos_y': 10.0,
                 'current_health': None,
-                # base stats (persistidos) — jogador começa com os valores da classe base como pontos iniciais
-                'strength': base_stats.get('strength', 1),
-                'agility': base_stats.get('agility', 1),
-                'vitality': base_stats.get('vitality', 1),
-                'intelligence': base_stats.get('intelligence', 1),
-                'dexterity': base_stats.get('dexterity', 1),
-                'luck': base_stats.get('luck', 1),
-                'base_health': base_stats.get('base_health', 100)
+                'strength': 1,
+                'agility': 1,
+                'vitality': 1,
+                'intelligence': 1,
+                'dexterity': 1,
+                'luck': 1,
+                'base_health': base_health,
+                'class_bonus': class_bonus
             }
 
         else:
-            is_fresh_player = player_data.get('level', 0) == 1 and player_data.get('experience', -1) == 0
-            if is_fresh_player:
-                log_message = f"New player '{username}' (freshly registered). Loading {DEFAULT_CLASS} metadata stats."
-            else:
-                log_message = f"Existing player '{username}' (Lvl {player_data.get('level', 1)}) loaded from DB."
-            logger.info(log_message)
-
-            # Inicializa final_data com todos os dados salvos (não sobrescrever)
-            final_data = dict(player_data)  # cópia rasa
+            final_data = dict(player_data)
 
             class_name = final_data.get('class_name', DEFAULT_CLASS)
             current_metadata = get_class_metadata(class_name) or {}
-            base_stats = current_metadata.get("base_stats", {})
-            
-            # Assegura campos mínimos existam (stats do player)
-            stats_to_load = ['strength', 'agility', 'vitality', 'intelligence', 'dexterity', 'luck']
-            for stat in stats_to_load:
+
+            class_bonus = current_metadata.get("class_bonus", {})
+            base_health = current_metadata.get("base_health", 100)
+
+            final_data['base_health'] = base_health
+            final_data['class_bonus'] = class_bonus
+
+            for stat in ['strength', 'agility', 'vitality', 'intelligence', 'dexterity', 'luck']:
                 if final_data.get(stat) is None:
-                    # fallback caso DB não tenha campo (campo novo), usa o base da classe
-                    final_data[stat] = base_stats.get(stat, 1)
+                    final_data[stat] = 1
 
-            # garante base_health (que vem da classe, não do player)
-            final_data['base_health'] = final_data.get('base_health', base_stats.get('base_health', 100))
             final_data.setdefault('stat_points', 0)
-
-            # Se player foi criado mas é "fresh" (caso especial), re-inicializa posições/vida e stat points
-            if is_fresh_player:
-                final_data.update({
-                    'level': 1,
-                    'experience': 0,
-                    'pos_x': 10.0,
-                    'pos_y': 10.0,
-                    'current_health': None,
-                    'stat_points': 0,
-                })
-
             final_data['class_name'] = class_name
-            
-        # --- ENVIA MAPA ---
+
         map_packet = {
             "type": PACKET_MAP_DATA,
             "map_name": self.map.MAP_NAME,
@@ -168,67 +149,69 @@ class GameEngine:
         await self.network_manager.send_packet(writer, map_packet)
         logger.info(f"Sent map '{self.map.MAP_NAME}' to player {username}.")
 
-        # --- CRIAR ENTIDADE E COMPONENTES ---
         entity_id = self.world.create_entity()
 
-        # 1. Classe
-        class_comp = ClassComponent(class_name=final_data['class_name'])
-        self.world.add_component(entity_id, class_comp)
+        self.world.add_component(entity_id, ClassComponent(final_data['class_name']))
 
-        # 2. Stats (Usa valores finais calculados acima)
         stats_comp = StatsComponent(
-            level=final_data.get('level', 1),
-            experience=final_data.get('experience', 0),
-            base_health=final_data.get('base_health', 100),
-            strength=final_data.get('strength', 1),
-            agility=final_data.get('agility', 1),
-            vitality=final_data.get('vitality', 1),
-            intelligence=final_data.get('intelligence', 1),
-            dexterity=final_data.get('dexterity', 1),
-            luck=final_data.get('luck', 1),
-            stat_points=final_data.get('stat_points', 0)
+            level=final_data['level'],
+            experience=final_data['experience'],
+            stat_points=final_data['stat_points'],
+
+            base_health=final_data['base_health'],
+
+            strength=final_data['strength'],
+            agility=final_data['agility'],
+            vitality=final_data['vitality'],
+            intelligence=final_data['intelligence'],
+            dexterity=final_data['dexterity'],
+            luck=final_data['luck'],
+
+            class_bonus=final_data['class_bonus']
         )
         self.world.add_component(entity_id, stats_comp)
 
-        # 3. Posição e Rede
-        initial_x = final_data.get('pos_x', 10.0)
-        initial_y = final_data.get('pos_y', 10.0)
-        radius = 0.5
-
-        self.world.add_component(entity_id, TypeComponent(entity_type='player'))
-        self.world.add_component(entity_id, PositionComponent(initial_x, initial_y))
+        self.world.add_component(entity_id, TypeComponent('player'))
+        self.world.add_component(entity_id, PositionComponent(final_data['pos_x'], final_data['pos_y']))
         self.world.add_component(entity_id, NetworkComponent(writer, username))
-        self.world.add_component(entity_id, CollisionComponent(radius))
+        self.world.add_component(entity_id, CollisionComponent(0.5))
+        self.world.add_component(entity_id, ViewportComponent(radius=A_O_I_RANGE))
 
-        # 4. Vida (Health)
-        calculated_max_health = stats_comp.get_max_health_for_level()
-        saved_current_health = final_data.get('current_health')
 
-        if saved_current_health is None or saved_current_health <= 0:
-            initial_health = calculated_max_health
-        elif saved_current_health > calculated_max_health:
-            initial_health = calculated_max_health
+        max_hp = stats_comp.get_max_health_for_level()
+        saved_hp = final_data.get('current_health')
+
+        if saved_hp is None or saved_hp <= 0:
+            initial_hp = max_hp
+        elif saved_hp > max_hp:
+            initial_hp = max_hp
         else:
-            initial_health = saved_current_health
+            initial_hp = saved_hp
 
-        self.world.add_component(entity_id, HealthComponent(max_health=calculated_max_health, initial_health=initial_health))
-        
-        # Registrar no mapa de entidades
+        self.world.add_component(entity_id, HealthComponent(max_health=max_hp, initial_health=initial_hp))
+
+
         self.player_entity_map[username] = entity_id
         logger.info(f"Entity {entity_id} created for player {username}.")
 
-        # --- ENVIAR PACOTE DE ENTIDADE USANDO SERIALIZADOR ---
-        # Aqui usamos o packet_builder para evitar repetição manual de campos
         entity_data = packet_builder.serialize_entity(self.world, entity_id)
-        
-        new_entity_packet = {
+
+        # Pacote para o próprio jogador (is_local_player: True)
+        local_player_packet = {
             "type": PACKET_ENTITY_NEW,
-            **entity_data # Espalha todos os dados (level, stats, class, health, etc)
+            "is_local_player": True,
+            **entity_data
         }
-        
-        await self.network_manager.send_packet(writer, new_entity_packet)
-        await self.send_aoi_update(entity_id, new_entity_packet, exclude_writer=writer)
+        await self.network_manager.send_packet(writer, local_player_packet)
+
         await self._receive_initial_aoi(entity_id, writer)
+
+        neighbor_packet = {
+            "type": PACKET_ENTITY_NEW,
+            "is_local_player": False,
+            **entity_data
+        }
+        await self.send_aoi_update(entity_id, neighbor_packet, exclude_writer=writer)
         
     async def player_disconnected(self, username):
         entity_id = self.player_entity_map.pop(username, None)
@@ -255,7 +238,7 @@ class GameEngine:
                     stats_comp.vitality,
                     stats_comp.intelligence,
                     stats_comp.dexterity,
-                    stats_comp.luck
+                    stats_comp.luck,
                 )
                 logger.info(f"Saved player {username}'s state: Pos ({pos_comp.x:.1f}, {pos_comp.y:.1f}), HP {health_comp.current_health}, Lvl {stats_comp.level}")
             
@@ -418,33 +401,85 @@ class GameEngine:
             await self.send_aoi_update(entity_id, update_packet)
             
     async def send_aoi_update(self, source_entity_id: int, packet: dict, exclude_writer=None):
-        # O método de envio permanece o mesmo, mas agora o pacote já vem serializado
-        source_pos_comp = self.world.get_component(source_entity_id, PositionComponent)
-        if not source_pos_comp:
-            return
+            """
+            Atualiza todos os jogadores sobre uma mudança de estado de uma entidade.
+            Garante envio apenas para os que estão na AOI e evita duplicação.
+            """
+            # ... código para obter source_pos ...
+            source_pos = self.world.get_component(source_entity_id, PositionComponent)
+            if not source_pos:
+                return
 
-        target_writers = []
-        
-        for target_username, target_entity_id in self.player_entity_map.items():
+            # Obter o NetworkComponent da entidade fonte para checar se é um jogador
+            source_net = self.world.get_component(source_entity_id, NetworkComponent)
+            source_is_player = source_net is not None
             
-            target_network_comp = self.world.get_component(target_entity_id, NetworkComponent)
-            target_pos_comp = self.world.get_component(target_entity_id, PositionComponent)
-            
-            if not target_pos_comp or not target_network_comp:
-                continue
-                
-            writer = target_network_comp.writer
-            
-            if writer == exclude_writer:
-                continue
+            for username, player_id in self.player_entity_map.items():
+                # ... código para obter net, viewport, player_pos ...
+                net = self.world.get_component(player_id, NetworkComponent)
+                viewport = self.world.get_component(player_id, ViewportComponent)
+                player_pos = self.world.get_component(player_id, PositionComponent)
 
-            distance = calculate_distance(source_pos_comp, target_pos_comp)
-            
-            if distance <= A_O_I_RANGE:
-                target_writers.append(writer)
+                if not net or not viewport or not player_pos:
+                    continue
 
-        for writer in target_writers:
-            await self.network_manager.send_packet(writer, packet)
+                writer = net.writer
+                if writer == exclude_writer:
+                    continue
+
+                # Cálculo de distância (supondo que a AOI é um quadrado: dx <= radius and dy <= radius)
+                dx = abs(player_pos.x - source_pos.x)
+                dy = abs(player_pos.y - source_pos.y)
+
+                entity_visible = dx <= viewport.radius and dy <= viewport.radius
+                already_sent = source_entity_id in viewport.last_sent_entities
+
+                if entity_visible:
+                    if not already_sent:
+                        # Entidade Fonte (PN) ENTROU na AOI do Player Vizinho (PA).
+                        
+                        # 1. Player Vizinho (PA) agora vê a Entidade Fonte (PN).
+                        viewport.last_sent_entities.add(source_entity_id)
+                        enter_packet = { 
+                            "type": PACKET_ENTITY_NEW,
+                            "is_local_player": False,
+                            **packet_builder.serialize_entity(self.world, source_entity_id)
+                        }
+                        await self.network_manager.send_packet(writer, enter_packet)
+                        
+                        # 2. **NOVO**: Se a Entidade Fonte (PN) é um jogador,
+                        # e o Player Vizinho (PA) é um vizinho (que não está se movendo), 
+                        # então o Player Vizinho (PA) precisa ser notificado de volta para a Entidade Fonte (PN).
+                        # A Entidade Fonte (PN) está AGORA vendo o Player Vizinho (PA)
+                        if source_is_player:
+                            source_viewport = self.world.get_component(source_entity_id, ViewportComponent)
+                            if source_viewport and player_id not in source_viewport.last_sent_entities:
+                                
+                                # O Player Novo (PN) AGORA vê o Player Antigo (PA).
+                                source_viewport.last_sent_entities.add(player_id)
+                                
+                                pa_data = packet_builder.serialize_entity(self.world, player_id)
+                                reverse_enter_packet = {
+                                    "type": PACKET_ENTITY_NEW,
+                                    "is_local_player": False,
+                                    **pa_data
+                                }
+                                # Envia o pacote do PA para o PN
+                                await self.network_manager.send_packet(source_net.writer, reverse_enter_packet)
+                                
+                    else:
+                        # Já estava na AOI, apenas atualiza
+                        await self.network_manager.send_packet(writer, packet)
+
+                elif already_sent:
+                    # Saiu da AOI
+                    viewport.last_sent_entities.remove(source_entity_id)
+                    leave_packet = {
+                        "type": PACKET_ENTITY_REMOVE,
+                        "entity_id": source_entity_id
+                    }
+                    await self.network_manager.send_packet(writer, leave_packet)
+
             
     async def send_system_message(self, target_entity_id: int, message: str):
         network_comp = self.world.get_component(target_entity_id, NetworkComponent)
@@ -497,52 +532,36 @@ class GameEngine:
         type_comp = self.get_type_comp(entity_id)
         return type_comp and type_comp.entity_type == 'monster'
             
-    async def _receive_initial_aoi(self, target_entity_id: int, target_writer):
-        target_pos_comp = self.world.get_component(target_entity_id, PositionComponent)
-        if not target_pos_comp:
-            return
+    async def _receive_initial_aoi(self, entity_id, writer):
+            """
+            Envia visão inicial do mundo para o jogador recém-conectado.
+            """
+            pos = self.world.get_component(entity_id, PositionComponent)
+            viewport = self.world.get_component(entity_id, ViewportComponent)
 
-        for source_entity_id, (source_pos_comp,) in self.world.get_components_of_type(PositionComponent):
-            if source_entity_id == target_entity_id:
-                continue
-            
-            source_pos_comp = self.world.get_component(source_entity_id, PositionComponent)
-            distance = calculate_distance(target_pos_comp, source_pos_comp)
-            
-            if source_pos_comp and distance <= A_O_I_RANGE:
-                #logger.debug(f"AoI Initial Sync: Sending Entity {source_entity_id} to New Player {target_entity_id}.")
-                
-                entity_data = packet_builder.serialize_entity(self.world, source_entity_id)
-                
-                if "asset_type" not in entity_data: continue
+            if not pos or not viewport:
+                return
 
-                new_entity_packet = {
+            # 1️⃣ Enviar entidades existentes para o novo jogador
+            visible = []
+            for other_id, (other_pos,) in self.world.get_components_of_type(PositionComponent):
+                if other_id == entity_id:
+                    continue
+                
+                if abs(other_pos.x - pos.x) <= viewport.radius and abs(other_pos.y - pos.y) <= viewport.radius:
+                    entity_data = packet_builder.serialize_entity(self.world, other_id)
+                    visible.append(entity_data)
+
+            # Atualiza o last_sent_entities do NOVO jogador com quem ele VÊ.
+            viewport.last_sent_entities = set(e.get("id") or e.get("entity_id") for e in visible)
+
+            for entity_data in visible:
+                entry_packet = {
                     "type": PACKET_ENTITY_NEW,
+                    "is_local_player": False,
                     **entity_data
                 }
-                
-                await self.network_manager.send_packet(target_writer, new_entity_packet)
-                
-    async def broadcast_entity_removal(self, entity_id: int, asset_type: str, exclude_writer=None):
-        removal_packet = {
-            'type': PACKET_ENTITY_REMOVE,
-            'entity_id': entity_id,
-            'asset_type': asset_type,
-        }
-
-        for target_username, target_entity_id in self.player_entity_map.items():
-            target_network_comp = self.world.get_component(target_entity_id, NetworkComponent)
-            if not target_network_comp or not target_network_comp.writer:
-                continue
-
-            writer = target_network_comp.writer
-            if writer == exclude_writer:
-                continue
-
-            try:
-                await self.network_manager.send_packet(writer, removal_packet)
-            except Exception as e:
-                logger.error(f"Error sending entity removal packet to {target_username}: {e}")
+                await self.network_manager.send_packet(writer, entry_packet)
             
     async def _sync_world_state(self):
         world_state_data = []

@@ -3,6 +3,7 @@ import pygame
 import sys
 
 from client.game.systems.chat_system import ChatSystem
+from client.game.ui.register_ui import RegisterUI
 from shared.logger import get_logger
 from shared.constants import IP, PORT, DATA_PAYLOAD_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, TICK_INTERVAL
 
@@ -16,27 +17,54 @@ from shared.protocol import PACKET_AUTH, PACKET_REGISTER
 
 logger = get_logger(__name__)
 
-async def show_login_screen(screen):
-    pygame.display.set_caption("MMO - Login")
+async def show_auth_screen(screen): # Renomear para refletir Login/Register
+    pygame.display.set_caption("MMO - Login/Register")
     clock = pygame.time.Clock()
 
+    # Inicializa as duas UIs
     login_ui = LoginUI(screen)
+    register_ui = RegisterUI(screen)
+    
+    current_ui = login_ui
+    auth_type = "login"
 
     running = True
     while running:
-        dt = clock.tick(60) / 1000.0  # frame delta
+        dt = clock.tick(60) / 1000.0 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit(0)
 
-            result = login_ui.handle_event(event)
+            result = current_ui.handle_event(event)
+            
             if result == "submit":
-                return login_ui.username, login_ui.password
+                if auth_type == "login":
+                    return current_ui.username, current_ui.password, PACKET_AUTH
+                else:
+                    # Verifica se as senhas coincidem antes de retornar
+                    if current_ui.password != current_ui.confirm_password:
+                        current_ui.message = "Passwords do not match!"
+                    else:
+                        return current_ui.username, current_ui.password, PACKET_REGISTER
 
-        login_ui.draw()
+            # Lógica de alternância de tela
+            elif result == "switch_to_register":
+                current_ui = register_ui
+                auth_type = "register"
+                current_ui.message = "" # Limpa mensagem
+                pygame.display.set_caption("MMO - Register")
+            
+            elif result == "switch_to_login":
+                current_ui = login_ui
+                auth_type = "login"
+                current_ui.message = "" # Limpa mensagem
+                pygame.display.set_caption("MMO - Login")
+                
+
+        current_ui.draw()
         pygame.display.flip()
-        await asyncio.sleep(0)  # deixa o asyncio rodar
+        await asyncio.sleep(0)
 
 
 async def network_loop(client_engine):
@@ -105,29 +133,30 @@ async def main():
     
     
 
-    username, password = await show_login_screen(screen)
+    username, password, auth_type = await show_auth_screen(screen)
     client.username = username
 
     packet = {
-        "type": PACKET_AUTH,
+        "type": auth_type,
         "username": username,
         "password": password
     }
     await client.send_message(packet)
 
     response = await client.receive_message()
-    if response.get("type") != "AUTH_SUCCESS":
+    logger.info(f"Authentication response: {response}")
+    if response.get("status") != "success":
         logger.error("Authentication failed")
         return
 
     logger.info(f"Welcome {username}!")
 
-    
-    
-    renderer = GameRenderer(client.world_state, screen, None)
-    client.renderer = renderer
     client_engine = ClientEngine(client)
     asyncio.create_task(network_loop(client_engine))
+    renderer = GameRenderer(client.world_state, screen, None)
+    client.renderer = renderer
+    
+    
     
     await game_loop(client, client_engine, renderer)
 

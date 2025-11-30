@@ -48,7 +48,7 @@ async def update_player_data(db_pool, username: str,
     async with db_pool.acquire() as connection:
         await connection.execute(query, 
                                  x, y, 
-                                 current_health, 
+                                 current_health,
                                  class_name, 
                                  level, experience, 
                                  strength, agility, vitality, 
@@ -63,7 +63,7 @@ async def get_player_data(db_pool, username: str):
     query = """
     SELECT pos_x, pos_y, 
            level, experience, stat_points,
-           current_health, 
+           current_health,
            strength, agility, vitality, 
            intelligence, dexterity, luck,
            class_name 

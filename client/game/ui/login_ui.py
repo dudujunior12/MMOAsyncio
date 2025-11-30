@@ -7,7 +7,6 @@ class LoginUI(BaseUI):
         self.username = ""
         self.password = ""
         self.active_field = None
-        self.message = ""
 
         self.font_title = pygame.font.Font(None, 64)
         self.font = pygame.font.Font(None, 36)
@@ -23,15 +22,17 @@ class LoginUI(BaseUI):
         self.error_color = (255, 90, 90)
         self.button_color = (0, 180, 255)
         self.button_hover = (0, 140, 200)
+        self.link_color = (100, 180, 255)
         
-        self.form_w = 420
         self.form_h = 300
-        self.form_x = (screen.get_width() - self.form_w)//2
-        self.form_y = (screen.get_height() - self.form_h)//2
+        # self.form_x = (screen.get_width() - self.form_w)//2 (Herda de BaseUI)
+        self.form_y = (screen.get_height() - self.form_h)//2 # Recalcula Y
 
         self.input_w = 320
         self.input_h = 45
         self.input_gap = 25
+        
+        self.link_gap = 15 # Novo gap
 
         self.username_rect = pygame.Rect(
             self.form_x + 50, self.form_y + 20,
@@ -48,6 +49,17 @@ class LoginUI(BaseUI):
             self.password_rect.bottom + 40,
             self.input_w, 55
         )
+        
+        # Link para Registro (Novo)
+        self.register_link_rect = pygame.Rect(
+            self.form_x + 50,
+            self.button_rect.bottom + self.link_gap,
+            self.input_w, 30
+        )
+        # Usa self.small_font herdado
+        link_temp_surf = self.small_font.render("No account? Register here", True, self.link_color)
+        self.register_link_rect.w = link_temp_surf.get_width()
+        self.register_link_rect.x = self.screen.get_width()//2 - link_temp_surf.get_width()//2
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -60,6 +72,9 @@ class LoginUI(BaseUI):
 
             if self.button_rect.collidepoint(event.pos):
                 return "submit"
+            
+            if self.register_link_rect.collidepoint(event.pos):
+                return "switch_to_register"
 
         elif event.type == pygame.KEYDOWN and self.active_field:
             if event.key == pygame.K_TAB:
@@ -87,29 +102,21 @@ class LoginUI(BaseUI):
         return None
 
     def draw(self):
+        # Usa o método de BaseUI
         self._draw_background()
-        self._draw_title("MMO Login")
+        
+        # CHAMA O MÉTODO DE BaseUI COM O ARGUMENTO form_y_start
+        self._draw_title("MMO Login", self.form_y) 
+        
+        # Estes métodos ainda precisam existir em LoginUI se não foram movidos para BaseUI
         self._draw_input(self.username_rect, self.username, "Username")
         self._draw_input(self.password_rect, "*" * len(self.password), "Password")
         self._draw_button()
-        self._draw_message()
+        self._draw_link()
+        
+        # CHAMA O MÉTODO DE BaseUI COM O ARGUMENTO bottom_y
+        self._draw_message(self.register_link_rect.bottom)
 
-    def _draw_background(self):
-        h = self.screen.get_height()
-        w = self.screen.get_width()
-        for y in range(h):
-            t = y / h
-            r = int(self.bg_top[0]*(1-t) + self.bg_bottom[0]*t)
-            g = int(self.bg_top[1]*(1-t) + self.bg_bottom[1]*t)
-            b = int(self.bg_top[2]*(1-t) + self.bg_bottom[2]*t)
-            pygame.draw.line(self.screen, (r, g, b), (0, y), (w, y))
-
-    def _draw_title(self, text):
-        surf = self.font_title.render(text, True, self.text_color)
-        self.screen.blit(
-            surf,
-            (self.screen.get_width()//2 - surf.get_width()//2, self.form_y - 80)
-        )
 
     def _draw_input(self, rect, text, placeholder):
         pygame.draw.rect(self.screen, self.input_bg, rect, border_radius=6)
@@ -141,14 +148,18 @@ class LoginUI(BaseUI):
                 self.button_rect.centery - text_surf.get_height()//2
             )
         )
+        
+    def _draw_link(self):
+        mouse = pygame.mouse.get_pos()
+        color = self.link_color
+        if self.register_link_rect.collidepoint(mouse):
+            color = self.button_hover # Destaca a cor quando o mouse passa
 
-    def _draw_message(self):
-        if not self.message:
-            return
-
-        surf = self.small_font.render(self.message, True, self.error_color)
+        text_surf = self.small_font.render("No account? Register here", True, color)
         self.screen.blit(
-            surf,
-            (self.screen.get_width()//2 - surf.get_width()//2,
-             self.button_rect.bottom + 15)
+            text_surf,
+            (
+                self.register_link_rect.centerx - text_surf.get_width()//2,
+                self.register_link_rect.centery - text_surf.get_height()//2
+            )
         )

@@ -20,6 +20,16 @@ class ClientWorldState:
         if not entity_id:
             return
 
+        ptype = entity_data.get("type")
+        is_snapshot = entity_data.get("snapshot", False)
+
+        # ⚠️ SE A ENTIDADE NÃO EXISTE AINDA:
+        if entity_id not in self.entities:
+            # e não é ENTITY_NEW nem parte do snapshot
+            if ptype != "ENTITY_NEW" and not is_snapshot:
+                # então ignoramos (evita criar entidades incompletas)
+                return
+
         is_new = entity_id not in self.entities
         current_data = self.entities.get(entity_id, {'id': entity_id})
         
@@ -44,7 +54,7 @@ class ClientWorldState:
         
         if is_new:
             health_info = f"HP: {current_data.get('current_health', 'N/A')}/{current_data.get('max_health', 'N/A')}"
-            logger.info(f"[WORLD] New Entity {entity_id} created for asset '{current_data['asset_type']}' at ({current_data['x']:.1f}, {current_data['y']:.1f}). {health_info}")
+            logger.debug(f"[WORLD] New Entity {entity_id} created for asset '{current_data['asset_type']}' at ({current_data['x']:.1f}, {current_data['y']:.1f}). {health_info}")
         # elif old_x != current_data['x'] or old_y != current_data['y']:
         #     logger.debug(f"[WORLD] Entity {entity_id} moved to ({current_data['x']:.1f}, {current_data['y']:.1f})")
             

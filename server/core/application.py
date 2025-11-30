@@ -20,6 +20,8 @@ class Application:
     async def initialize(self):
         logger.info("Initializing Application...")
         self.db_pool = await init_db_pool()
+        if not self.db_pool:
+            raise RuntimeError("Database pool is missing after initialization")
         self.server_socket = ServerSocket(self.host, self.port, self.data_payload_size, self.db_pool, None)
         self.game_engine = GameEngine(self.db_pool, self.server_socket)
         self.server_socket.game_engine = self.game_engine

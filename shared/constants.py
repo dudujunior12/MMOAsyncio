@@ -8,7 +8,7 @@ IP = os.getenv("IP", "localhost")
 PORT = int(os.getenv("PORT", "8080"))
 DATA_PAYLOAD_SIZE = int(os.getenv("DATA_PAYLOAD_SIZE", "262144"))
 
-GAME_TICK_RATE = 30 
+GAME_TICK_RATE = 60 
 TICK_INTERVAL = 1.0 / GAME_TICK_RATE
 
 SCREEN_WIDTH = 900
