@@ -5,16 +5,29 @@
       "level": 1,
       "base_health": 30,
       "strength": 5,
-      "vitality": 2
+      "vitality": 2,
+
+      "collider": {
+        "shape": "box",
+        "width": 0.8,
+        "height": 0.8
+      }
     },
     {
       "asset_type": "Wolf_Pack_Leader",
       "level": 5,
       "base_health": 80,
       "strength": 15,
-      "vitality": 5
+      "vitality": 5,
+
+      "collider": {
+        "shape": "box",
+        "width": 1.2,
+        "height": 0.9
+      }
     }
   ],
+
   "spawn_zones": [
     {
       "zone_name": "Forest_Entrance",

@@ -50,11 +50,15 @@ class ClientWorldState:
             if key in entity_data:
                 current_data[key] = entity_data[key]
         
+        if 'collider' in entity_data:
+            current_data['collider'] = entity_data['collider']
+
         self.entities[entity_id] = current_data
         
         if is_new:
             health_info = f"HP: {current_data.get('current_health', 'N/A')}/{current_data.get('max_health', 'N/A')}"
             logger.debug(f"[WORLD] New Entity {entity_id} created for asset '{current_data['asset_type']}' at ({current_data['x']:.1f}, {current_data['y']:.1f}). {health_info}")
+            
         # elif old_x != current_data['x'] or old_y != current_data['y']:
         #     logger.debug(f"[WORLD] Entity {entity_id} moved to ({current_data['x']:.1f}, {current_data['y']:.1f})")
             

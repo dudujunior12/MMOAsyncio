@@ -1,5 +1,5 @@
 class MovementComponent:
-    def __init__(self, speed: float = 5.0):
+    def __init__(self, speed: float = 0.9):
         self.base_speed = speed
         
         self.dx = 0.0

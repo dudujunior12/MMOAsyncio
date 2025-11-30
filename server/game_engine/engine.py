@@ -34,6 +34,7 @@ from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
 from server.game_engine.components.viewport import ViewportComponent
 from server.db.player import get_player_data, update_player_data
+from server.game_engine.collision.shapes import BoxCollider
 from server.systems.collision import CollisionSystem
 
 class GameEngine:
@@ -174,7 +175,7 @@ class GameEngine:
         self.world.add_component(entity_id, TypeComponent('player'))
         self.world.add_component(entity_id, PositionComponent(final_data['pos_x'], final_data['pos_y']))
         self.world.add_component(entity_id, NetworkComponent(writer, username))
-        self.world.add_component(entity_id, CollisionComponent(0.5))
+        self.world.add_component(entity_id, CollisionComponent(BoxCollider(1, 1)))
         self.world.add_component(entity_id, ViewportComponent(radius=A_O_I_RANGE))
 
 

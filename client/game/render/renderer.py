@@ -1,4 +1,3 @@
-# client/game/render/renderer.py
 import pygame
 from client.game.systems.camera_system import Camera
 from client.game.systems.chat_system import ChatSystem
@@ -8,6 +7,11 @@ from shared.constants import SPRITE_SIZE
 from shared.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Fator de controle para a velocidade da interpolação.
+# Valores maiores (ex: 15.0 ou 20.0) reduzem o atraso visual (menor lag), mas podem causar jitter.
+# Valores menores (ex: 5.0) aumentam a suavidade, mas aumentam o atraso visual.
+SMOOTHING_FACTOR = 10.0 # Valor otimizado para bom equilíbrio entre suavidade e responsividade.
 
 class GameRenderer:
     def __init__(self, world, screen, player_entity_id):
@@ -27,10 +31,60 @@ class GameRenderer:
         }
         
         self.status_bar = StatusBar(screen, player_entity_id, world)
+        
+    def draw_server_debug_colliders(self, world):
+        """
+        Desenha as AABBs que o servidor calcula.
+        Usa a posição INTERPOLADA (x_visual, y_visual) para estar sincronizado com o sprite.
+        """
+        for ent in world.get_all_entities():
+            col = ent.get("collider")
+            if not col:
+                continue
+
+            # --- USANDO POSIÇÃO INTERPOLADA (VISUAL) ---
+            px = ent.get("x_visual", ent.get("x", 0)) 
+            py = ent.get("y_visual", ent.get("y", 0))
+            # -------------------------------------------
+
+            # pega extensões (metade da largura e altura)
+            if col["type"] == "box" or col["type"] == "sprite":
+                hw = col.get("width", 1) / 2
+                hh = col.get("height", 1) / 2 
+                offset_x = col.get("offset_x", 0)
+                offset_y = col.get("offset_y", 0)
+
+                # converte para pixels e aplica camera
+                draw_center_x, draw_center_y = self.camera.apply(px * SPRITE_SIZE, py * SPRITE_SIZE)
+
+                # converte extensões para pixels
+                width_px = hw * 2 * SPRITE_SIZE
+                height_px = hh * 2 * SPRITE_SIZE
+                offset_px_x = offset_x * SPRITE_SIZE
+                offset_px_y = offset_y * SPRITE_SIZE
+
+                # AABB do servidor desenhada em vermelho
+                col_rect = pygame.Rect(
+                    draw_center_x + offset_px_x - width_px / 2,
+                    draw_center_y + offset_px_y - height_px / 2,
+                    width_px,
+                    height_px
+                )
+                pygame.draw.rect(self.screen, (255, 0, 0), col_rect, 2)
+
+            elif col["type"] == "circle":
+                offset_x = col.get("offset_x", 0)
+                offset_y = col.get("offset_y", 0)
+                radius = col.get("radius", 0.5) * SPRITE_SIZE
+                
+                draw_x, draw_y = self.camera.apply(px * SPRITE_SIZE + offset_x * SPRITE_SIZE,
+                                                   py * SPRITE_SIZE + offset_y * SPRITE_SIZE)
+                pygame.draw.circle(self.screen, (255, 0, 0), (int(draw_x), int(draw_y)), int(radius), 2)
 
     def draw(self):
         self.screen.fill((25, 25, 35))
 
+        # --- 1. Desenho do Mapa ---
         for y in range(self.world.map_height):
             for x in range(self.world.map_width):
                 tile_type = self.world.get_tile_type(x, y)
@@ -59,28 +113,60 @@ class GameRenderer:
                     (draw_x, draw_y, SPRITE_SIZE, SPRITE_SIZE)
                 )
 
+        # --- 2. Atualização da Câmera ---
         player = self.world.get_local_player()
         if player:
-            self.camera.update(player)
+            # Garante que a câmera rastreia a Posição VISUAL INTERPOLADA do jogador.
+            self.camera.update({"x": player.get("x_visual", player["x"]), 
+                                "y": player.get("y_visual", player["y"])}, self.dt)
             
-        speed = 5.0
+        # --- 3. Desenho e Interpolação de Entidades (Lerp) ---
         for ent in self.world.get_all_entities():
-            ent["x_visual"] += (ent["x"] - ent["x_visual"]) * min(1, speed * self.dt)
-            ent["y_visual"] += (ent["y"] - ent["y_visual"]) * min(1, speed * self.dt)
+            
+            # 3a. Inicializa a posição visual se for a primeira vez
+            if "x_visual" not in ent:
+                ent["x_visual"] = ent["x"]
+                ent["y_visual"] = ent["y"]
+            
+            # 3b. Interpolação (Lerp)
+            lerp_factor = min(1.0, SMOOTHING_FACTOR * self.dt)
+            
+            ent["x_visual"] += (ent["x"] - ent["x_visual"]) * lerp_factor
+            ent["y_visual"] += (ent["y"] - ent["y_visual"]) * lerp_factor
 
-            draw_x, draw_y = self.camera.apply(
-                int(ent["x_visual"] * SPRITE_SIZE),
-                int(ent["y_visual"] * SPRITE_SIZE)
-            )
+            x_center = ent["x_visual"] * SPRITE_SIZE
+            y_center = ent["y_visual"] * SPRITE_SIZE
 
+            draw_center_x, draw_center_y = self.camera.apply(x_center, y_center)
+
+            # Desenho do Sprite (retângulo simples com pivot nos pés)
             color = self.colors.get(ent.get("asset_type"), (255, 255, 255))
             pygame.draw.rect(
                 self.screen,
                 color,
-                (draw_x, draw_y, SPRITE_SIZE, SPRITE_SIZE)
+                # Começa meia-largura e meia-altura acima do centro
+                (draw_center_x - SPRITE_SIZE/2, draw_center_y - SPRITE_SIZE/2, SPRITE_SIZE, SPRITE_SIZE)
             )
-            
-        self.chat_ui.draw()
+            # Desenho do Collider de Entidade
+            collider = ent.get("collider")
+            if collider and collider["type"] == "box":
+                width = collider["width"] * SPRITE_SIZE
+                height = collider["height"] * SPRITE_SIZE
+                offset_x = collider.get("offset_x", 0) * SPRITE_SIZE
+                offset_y = collider.get("offset_y", 0) * SPRITE_SIZE
 
+                col_rect = pygame.Rect(
+                    draw_center_x + offset_x - width/2,
+                    draw_center_y + offset_y - height/2, 
+                    width,
+                    height
+                )
+            
+        # --- 4. Elementos de UI e Debug ---
+        self.chat_ui.draw()
+        
+        # Desenha o debug do servidor na posição visual
+        self.draw_server_debug_colliders(self.world) 
+        
         self.status_bar.draw()
         pygame.display.flip()

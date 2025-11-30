@@ -7,6 +7,8 @@ from server.game_engine.components.type import TypeComponent
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
 from shared.logger import get_logger
+from server.game_engine.components.collision import CollisionComponent
+from server.game_engine.collision.shapes import BoxCollider, CircleCollider, SpriteCollider
 
 logger = get_logger(__name__)
 
@@ -34,37 +36,68 @@ class WorldInitializer:
 
         for npc_data in initial_npcs:
             self._create_npc_entity(**npc_data)
+            
+    def _build_collider_shape(self, collider_info):
+        shape = collider_info.get("shape")
+        if shape == "box":
+            width = collider_info.get("width", 1.0)
+            height = collider_info.get("height", 1.0)
+            return BoxCollider(width, height)
 
-    def _create_npc_entity(self, x: float, y: float, asset_type: str, level: int, base_health: int, strength: int, vitality: int, radius: float = 0.5):
-        
+        elif shape == "circle":
+            radius = collider_info.get("radius", 0.5)
+            return CircleCollider(radius)
+
+        elif shape == "sprite":
+            sprite_w = collider_info.get("sprite_width", 100)
+            sprite_h = collider_info.get("sprite_height", 100)
+            scale = collider_info.get("scale", 1.0)
+            return SpriteCollider(sprite_w, sprite_h, scale)
+
+        else:
+            # fallback genérico
+            return BoxCollider(1.0, 1.0)
+
+
+    def _create_npc_entity(self, x, y, asset_type, level, base_health, strength, vitality, collider=None, **unused):
+
         npc_entity_id = self.world.create_entity()
-        
+
         npc_stats = StatsComponent(
-            level=level, 
-            experience=0, 
+            level=level,
+            experience=0,
             base_health=base_health,
-            strength=strength, 
+            strength=strength,
             agility=1,
             vitality=vitality,
             intelligence=1,
             dexterity=1,
             luck=1
         )
-        calculated_max_health = npc_stats.get_max_health_for_level()
-        
+
+        max_hp = npc_stats.get_max_health_for_level()
+
         self.world.add_component(npc_entity_id, PositionComponent(x, y))
-        self.world.add_component(npc_entity_id, CollisionComponent(radius))
+
+        # --- COLLIDER MODULAR ---
+        if collider:
+            shape = self._build_collider_shape(collider)
+            self.world.add_component(npc_entity_id, CollisionComponent(shape))
+        else:
+            # fallback caso o template não tenha collider
+            self.world.add_component(npc_entity_id, CollisionComponent(BoxCollider(0.8, 0.8)))
+
         self.world.add_component(npc_entity_id, npc_stats)
-        self.world.add_component(npc_entity_id, HealthComponent(max_health=calculated_max_health, initial_health=calculated_max_health))
-        
+        self.world.add_component(npc_entity_id, HealthComponent(max_health=max_hp, initial_health=max_hp))
+
         self.world.add_component(npc_entity_id, TypeComponent(entity_type='monster'))
         self.world.add_component(npc_entity_id, NetworkComponent(writer=None, username=asset_type))
-        self.world.add_component(npc_entity_id, AIComponent(
-            initial_state='wandering', 
-            home_x=x, 
-            home_y=y
-        ))
-        
+
+        self.world.add_component(
+            npc_entity_id,
+            AIComponent(initial_state='wandering', home_x=x, home_y=y)
+        )
+
         logger.info(f"NPC Entity {npc_entity_id} ('{asset_type}') spawned at ({x}, {y}).")
 
         return npc_entity_id

@@ -5,6 +5,7 @@ from server.game_engine.components.network import NetworkComponent
 from server.utils.utils import calculate_distance
 from shared.logger import get_logger
 from shared.protocol import PACKET_POSITION_UPDATE
+from shared.constants import MAX_MOVE_DISTANCE
 
 logger = get_logger(__name__)
 
@@ -14,7 +15,7 @@ class MovementSystem:
         self.network_manager = network_manager
         self.collision_system = collision_system
         self.send_aoi_update = send_aoi_update_func
-        self.MAX_MOVE_DISTANCE = 5.0
+        self.MAX_MOVE_DISTANCE = MAX_MOVE_DISTANCE
 
     async def handle_move_request(self, entity_id: int, writer, dx: float, dy: float):
         pos_comp = self.world.get_component(entity_id, PositionComponent)

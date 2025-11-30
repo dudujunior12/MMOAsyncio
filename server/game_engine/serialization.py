@@ -1,3 +1,5 @@
+from server.game_engine.collision.shapes import BoxCollider, CircleCollider, SpriteCollider
+from server.game_engine.components.collision import CollisionComponent
 from server.game_engine.components.player_class import ClassComponent
 from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.network import NetworkComponent
@@ -18,6 +20,7 @@ class PacketBuilder:
             StatsComponent: self._serialize_stats,
             HealthComponent: self._serialize_health,
             ClassComponent: self._serialize_class,
+            CollisionComponent: self._serialize_collision,
         }
 
     def serialize_entity(self, world: 'World', entity_id: int) -> dict:
@@ -80,5 +83,39 @@ class PacketBuilder:
 
                 
             return data
+        
+    def _serialize_collision(self, comp: CollisionComponent) -> dict:
+        shape = comp.shape
+        data = {
+            "collider": {
+                "offset_x": comp.offset_x,
+                "offset_y": comp.offset_y,
+                "is_trigger": comp.is_trigger,
+                "type": "unknown"
+            }
+        }
+
+        if shape is None:
+            return data
+
+        if isinstance(shape, BoxCollider):
+            data["collider"].update({
+                "type": "box",
+                "width": getattr(shape, 'hw', 0) * 2,
+                "height": getattr(shape, 'hh', 0) * 2
+            })
+        elif isinstance(shape, CircleCollider):
+            data["collider"].update({
+                "type": "circle",
+                "radius": getattr(shape, 'radius', 0)
+            })
+        elif isinstance(shape, SpriteCollider):
+            data["collider"].update({
+                "type": "sprite",
+                "width": getattr(shape, 'hw', 0) * 2,
+                "height": getattr(shape, 'hh', 0) * 2
+            })
+
+        return data
 
 packet_builder = PacketBuilder()
