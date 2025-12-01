@@ -11,13 +11,6 @@ logger = get_logger(__name__)
 
 SMOOTHING_FACTOR = 2.0
 
-import math
-
-def calculate_distance(x1: float, y1: float, x2: float, y2: float) -> float:
-    dx = x1 - x2
-    dy = y1 - y2
-    return math.sqrt(dx**2 + dy**2)
-
 class WorldRenderer:
     def __init__(self, world, screen, player_entity_id):
 
