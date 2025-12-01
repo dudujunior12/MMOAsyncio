@@ -3,13 +3,14 @@ import pygame
 import sys
 
 from client.game.systems.chat_system import ChatSystem
+from client.game.systems.client_input_system import ClientInputSystem
 from client.game.ui.register_ui import RegisterUI
 from shared.logger import get_logger
 from shared.constants import IP, PORT, DATA_PAYLOAD_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, TICK_INTERVAL
 
 from client.network.client import GameClient
 from client.game.engine.client_engine import ClientEngine
-from client.game.render.renderer import GameRenderer
+from client.game.render.world_renderer import WorldRenderer
 from client.game.input.movement_input import get_movement_packet, handle_key_event
 
 from client.game.ui.login_ui import LoginUI
@@ -76,15 +77,14 @@ async def network_loop(client_engine):
         await client_engine.process_packet(packet)
 
 
-async def game_loop(client, client_engine, renderer):
+async def game_loop(client, client_engine, world_renderer, input_system):
     running = True
     accumulator = 0.0
 
-    chat_system = ChatSystem(client, renderer.chat_ui, client.username)
-
+    chat_system = ChatSystem(client, world_renderer.chat_ui, client.username)
     while running and not client.is_closed:
-        dt = renderer.clock.tick(60) / 1000.0
-        renderer.dt = dt
+        dt = world_renderer.clock.tick(60) / 1000.0
+        world_renderer.dt = dt
         accumulator += dt
 
         for event in pygame.event.get():
@@ -93,16 +93,21 @@ async def game_loop(client, client_engine, renderer):
                 running = False
                 break
 
-            chat_result = renderer.chat_ui.handle_event(event)
+            chat_result = world_renderer.chat_ui.handle_event(event)
             if chat_result is not None:
                 if chat_result != "":
                     await chat_system.send_message(chat_result)
                 continue
 
-            if not renderer.chat_ui.active:
+            if not world_renderer.chat_ui.active:
                 handle_key_event(event)
+                
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # Botão esquerdo do mouse
+                    mouse_pos = event.pos
+                    # Chama uma nova função no renderer para lidar com o clique
+                    await input_system.handle_mouse_attack_click(mouse_pos, client)
 
-        if not renderer.chat_ui.active:
+        if not world_renderer.chat_ui.active:
             while accumulator >= TICK_INTERVAL:
                 # 1. Obtém os dados do jogador local (do world_state)
                 # Estes dados agora contêm 'movement_speed'
@@ -121,7 +126,7 @@ async def game_loop(client, client_engine, renderer):
                     await client.send_message(move_packet)
                 accumulator -= TICK_INTERVAL
 
-        renderer.draw()
+        world_renderer.draw()
         await asyncio.sleep(0)
 
     pygame.quit()
@@ -165,13 +170,12 @@ async def main():
 
     client_engine = ClientEngine(client)
     asyncio.create_task(network_loop(client_engine))
-    renderer = GameRenderer(client.world_state, screen, None)
-    client.renderer = renderer
+    world_renderer = WorldRenderer(client.world_state, screen, None)
+    client.renderer = world_renderer
     
+    input_system = ClientInputSystem(client.world_state, world_renderer.camera, client.world_state.local_player_id)
     
-    
-    await game_loop(client, client_engine, renderer)
-
+    await game_loop(client, client_engine, world_renderer, input_system)
 
 if __name__ == "__main__":
     try:

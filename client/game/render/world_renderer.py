@@ -3,17 +3,22 @@ from client.game.systems.camera_system import Camera
 from client.game.systems.chat_system import ChatSystem
 from client.game.ui.chat_ui import ChatUI
 from client.game.ui.status_bar import StatusBar
-from shared.constants import SPRITE_SIZE
+from shared.constants import ATTACK_RANGE, SPRITE_SIZE
 from shared.logger import get_logger
+from shared.protocol import PACKET_DAMAGE
 
 logger = get_logger(__name__)
 
-# Fator de controle para a velocidade da interpolação.
-# Valores maiores (ex: 15.0 ou 20.0) reduzem o atraso visual (menor lag), mas podem causar jitter.
-# Valores menores (ex: 5.0) aumentam a suavidade, mas aumentam o atraso visual.
-SMOOTHING_FACTOR = 2 # Valor otimizado para bom equilíbrio entre suavidade e responsividade.
+SMOOTHING_FACTOR = 2.0
 
-class GameRenderer:
+import math
+
+def calculate_distance(x1: float, y1: float, x2: float, y2: float) -> float:
+    dx = x1 - x2
+    dy = y1 - y2
+    return math.sqrt(dx**2 + dy**2)
+
+class WorldRenderer:
     def __init__(self, world, screen, player_entity_id):
 
         self.world = world
@@ -170,3 +175,4 @@ class GameRenderer:
         
         self.status_bar.draw()
         pygame.display.flip()
+        

@@ -4,7 +4,7 @@ from server.game_engine.components.health import HealthComponent
 from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.type import TypeComponent
 from server.systems.ai_system import AISystem
-from server.systems.combat_system import CombatSystem, calculate_distance
+from server.systems.combat_system import CombatSystem
 from server.systems.evolution import EvolutionSystem
 from server.systems.movement_system import MovementSystem
 from server.systems.world_initializer import WorldInitializer

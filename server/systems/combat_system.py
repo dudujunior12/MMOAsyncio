@@ -5,8 +5,9 @@ from server.game_engine.components.stats import StatsComponent
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.type import TypeComponent
 from server.game_engine.components.network import NetworkComponent
-from server.systems.movement_system import calculate_distance
+from server.utils.utils import calculate_distance
 from shared.logger import get_logger
+from shared.constants import ATTACK_RANGE
 from shared.protocol import (
     PACKET_HEALTH_UPDATE,
     PACKET_ENTITY_NEW,
@@ -23,7 +24,6 @@ class CombatSystem:
         self.network_manager = network_manager
         self.send_aoi_update = send_aoi_update_func
         self.send_system_message = send_system_message_func
-        self.AOI_RANGE = 25.0
         self.ATTACK_RANGE = 2.0
 
     async def handle_damage_request(self, source_entity_id: int, target_entity_id: int):
@@ -102,7 +102,7 @@ class CombatSystem:
         target_user = target_network_comp.username if target_network_comp else f"Entity {target_entity_id}"
 
         if source_entity_id:
-            await self.send_system_message(source_entity_id, f"You dealt {damage_dealt} of damage to {target_user}.")
+            await self.send_system_message(source_entity_id, f"You dealt {damage_dealt} of damage to {target_user}. Health left: {health_comp.current_health}/{health_comp.max_health}")
 
         await self.send_system_message(target_entity_id, f"You received {damage_dealt} of damage from {source_user}. Health left: {health_comp.current_health}/{health_comp.max_health}")
 
