@@ -1,11 +1,9 @@
 import pygame
 from client.game.systems.camera_system import Camera
-from client.game.systems.chat_system import ChatSystem
 from client.game.ui.chat_ui import ChatUI
 from client.game.ui.status_bar import StatusBar
-from shared.constants import ATTACK_RANGE, SPRITE_SIZE
+from shared.constants import SPRITE_SIZE
 from shared.logger import get_logger
-from shared.protocol import PACKET_DAMAGE
 
 logger = get_logger(__name__)
 
