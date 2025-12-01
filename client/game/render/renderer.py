@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 # Fator de controle para a velocidade da interpolação.
 # Valores maiores (ex: 15.0 ou 20.0) reduzem o atraso visual (menor lag), mas podem causar jitter.
 # Valores menores (ex: 5.0) aumentam a suavidade, mas aumentam o atraso visual.
-SMOOTHING_FACTOR = 10.0 # Valor otimizado para bom equilíbrio entre suavidade e responsividade.
+SMOOTHING_FACTOR = 2 # Valor otimizado para bom equilíbrio entre suavidade e responsividade.
 
 class GameRenderer:
     def __init__(self, world, screen, player_entity_id):
@@ -128,8 +128,8 @@ class GameRenderer:
                 ent["x_visual"] = ent["x"]
                 ent["y_visual"] = ent["y"]
             
-            # 3b. Interpolação (Lerp)
-            lerp_factor = min(1.0, SMOOTHING_FACTOR * self.dt)
+            move_speed = ent.get("movement_speed", 1.0)
+            lerp_factor = min(1.0, move_speed * SMOOTHING_FACTOR * self.dt)
             
             ent["x_visual"] += (ent["x"] - ent["x_visual"]) * lerp_factor
             ent["y_visual"] += (ent["y"] - ent["y_visual"]) * lerp_factor

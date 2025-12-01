@@ -2,6 +2,7 @@
 
 from server.game_engine.components.position import PositionComponent
 from server.game_engine.components.network import NetworkComponent
+from server.game_engine.components.stats import StatsComponent
 from server.utils.utils import calculate_distance
 from shared.logger import get_logger
 from shared.protocol import PACKET_POSITION_UPDATE
@@ -24,6 +25,21 @@ class MovementSystem:
         if not pos_comp or not network_comp:
             logger.warning(f"Move request for invalid entity {entity_id}.")
             return
+        
+        stats_comp = self.world.get_component(entity_id, StatsComponent)
+        if not stats_comp:
+            # Lidar com entidade sem stats, talvez usar uma velocidade padrão
+            max_allowed_distance = self.MAX_MOVE_DISTANCE 
+        else:
+            # 1. OBTER a velocidade da entidade
+            move_speed = stats_comp.get_movement_speed()
+            # Você pode querer que a MAX_MOVE_DISTANCE seja a velocidade * por um fator de tempo
+            # Ex: Move_speed é unidades/seg, MAX_MOVE_DISTANCE (temporária) é unidades/tick.
+            
+            # A forma mais simples de usar as stats é LIMITAR o MAX_MOVE_DISTANCE
+            # Pelo que o cliente está enviando (dx, dy), parece que ele já está calculando 
+            # o deslocamento total para o tick/pacote.
+            max_allowed_distance = move_speed
 
         user = network_comp.username
         current_x = pos_comp.x
@@ -35,8 +51,8 @@ class MovementSystem:
 
         # Verifica distância máxima
         distance_moved = (dx ** 2 + dy ** 2) ** 0.5
-        if distance_moved > self.MAX_MOVE_DISTANCE:
-            logger.warning(f"User {user} attempted invalid move distance ({distance_moved:.2f})")
+        if distance_moved > max_allowed_distance:
+            logger.warning(f"User {user} attempted invalid move distance ({distance_moved:.2f}) > allowed ({max_allowed_distance:.2f})")
             await self._resync_position(entity_id, writer, current_x, current_y, user)
             return
 

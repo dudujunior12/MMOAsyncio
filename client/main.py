@@ -104,7 +104,19 @@ async def game_loop(client, client_engine, renderer):
 
         if not renderer.chat_ui.active:
             while accumulator >= TICK_INTERVAL:
-                move_packet = get_movement_packet()
+                # 1. Obtém os dados do jogador local (do world_state)
+                # Estes dados agora contêm 'movement_speed'
+                player_data = client.world_state.get_local_player()
+                
+                if player_data is None:
+                    # Se o jogador ainda não foi sincronizado, pula o movimento.
+                    accumulator -= TICK_INTERVAL
+                    continue
+                    
+                # 2. Passa os dados do jogador para obter o pacote de movimento
+                # O get_movement_packet usará o 'movement_speed'
+                move_packet = get_movement_packet(player_data)
+                
                 if move_packet:
                     await client.send_message(move_packet)
                 accumulator -= TICK_INTERVAL

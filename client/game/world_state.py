@@ -45,7 +45,9 @@ class ClientWorldState:
         current_data['last_update'] = time.time()
         
         
-        
+        if 'movement_speed' in entity_data:
+            current_data['movement_speed'] = entity_data['movement_speed']
+            
         for key in PLAYER_ATTRS:
             if key in entity_data:
                 current_data[key] = entity_data[key]

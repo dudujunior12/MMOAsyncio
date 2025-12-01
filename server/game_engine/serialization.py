@@ -80,7 +80,7 @@ class PacketBuilder:
                 total_attr_name = f"total_{attr}"
 
                 data[attr] = getattr(comp, total_attr_name, getattr(comp, attr, 0))
-
+            data['movement_speed'] = comp.get_movement_speed()
                 
             return data
         
