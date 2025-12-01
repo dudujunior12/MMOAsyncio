@@ -23,11 +23,8 @@ class ClientWorldState:
         ptype = entity_data.get("type")
         is_snapshot = entity_data.get("snapshot", False)
 
-        # ⚠️ SE A ENTIDADE NÃO EXISTE AINDA:
         if entity_id not in self.entities:
-            # e não é ENTITY_NEW nem parte do snapshot
             if ptype != "ENTITY_NEW" and not is_snapshot:
-                # então ignoramos (evita criar entidades incompletas)
                 return
 
         is_new = entity_id not in self.entities

@@ -25,6 +25,7 @@ class StatsComponent:
         self.intelligence = intelligence
         self.dexterity = dexterity
         self.luck = luck
+        self.speed_multiplier = 1.0
         
         self.xp_to_next_level = self._calculate_xp_needed(self.level)
         
@@ -102,4 +103,6 @@ class StatsComponent:
         return (self.total_strength * 2) + (self.total_dexterity // 5)
 
     def get_movement_speed(self) -> float:
-        return 5.0 + (self.total_agility * 0.1)
+        base_speed = 5.0 + (self.total_agility * 0.1)
+        # Aplica o multiplicador de buffs ou poções
+        return base_speed * self.speed_multiplier
